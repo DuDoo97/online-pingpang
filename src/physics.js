@@ -191,18 +191,27 @@ export function stepBall(ball, dt, P = PARAMS, events = []) {
 }
 
 // Apply a rubber impact to `ball` (mutates it). n = unit normal from the rubber toward the ball.
-export function racketImpact(ball, n, racketVel, P = PARAMS) {
+// `S` (optional) is a racket SURFACE: {cor, grip, tangential, slope}. It overrides only the three contact
+// constants, so a racket changes the feel of the hit and nothing else — flight, bounce and the net are untouched.
+// Surfaces are passed in per contact rather than written into PARAMS, so a racket can never leak into the ball's
+// flight through some other code path.
+export function racketImpact(ball, n, racketVel, P = PARAMS, S = null) {
   const vrel = sub(ball.vel, racketVel);
   const vn = Math.abs(dot(vrel, n));
   const vt = len(sub(vrel, scale(n, dot(vrel, n))));
-  const e = Math.max(0.4, P.racketCOR - P.racketCORSlope * vn);
-  const et = Math.max(0, P.racketTangentialCOR - P.racketTangentialSlope * vt);
-  return impactBall(ball, n, racketVel, e, P.racketFriction, et);
+  const cor = S && S.cor != null ? S.cor : P.racketCOR;
+  const grip = S && S.grip != null ? S.grip : P.racketFriction;
+  const tan = S && S.tangential != null ? S.tangential : P.racketTangentialCOR;
+  const corSlope = S && S.slope != null ? S.slope : P.racketCORSlope;
+  const e = Math.max(0.4, cor - corSlope * vn);
+  // A slippery surface lets go of the spin sooner: the tangential restitution decays with slip speed.
+  const et = Math.max(0, tan - P.racketTangentialSlope * vt);
+  return impactBall(ball, n, racketVel, e, grip, et);
 }
 // Preview of a rubber impact: returns the outgoing {vel, spin} without touching the ball, or null if separating.
-export function previewRacketImpact(vel, spin, n, racketVel, P = PARAMS) {
+export function previewRacketImpact(vel, spin, n, racketVel, P = PARAMS, S = null) {
   const b = new Ball(); b.vel = copy(vel); b.spin = copy(spin);
-  const res = racketImpact(b, n, racketVel, P);
+  const res = racketImpact(b, n, racketVel, P, S);
   return res ? { vel: b.vel, spin: b.spin } : null;
 }
 
@@ -210,7 +219,7 @@ export function previewRacketImpact(vel, spin, n, racketVel, P = PARAMS) {
 // racket.prevPos / racket.pos bracket the racket motion during this step, prevBallPos / ball.pos the ball's.
 // refine (optional): called with the ball in its pre-impact state at the contact point; returns { normal, vel } for
 // the racket at that instant (a hand's last-moment adjustment) or null to keep the racket's current face.
-export function collideRacket(ball, prevBallPos, racket, P = PARAMS, refine = null) {
+export function collideRacket(ball, prevBallPos, racket, P = PARAMS, refine = null, surface = null) {
   const r = BALL.radius;
   const half = r + racket.thickness / 2;
   const d0 = dot(sub(prevBallPos, racket.prevPos), racket.normal);
@@ -237,7 +246,7 @@ export function collideRacket(ball, prevBallPos, racket, P = PARAMS, refine = nu
       racket.normal = nr;
     }
   }
-  const res = racketImpact(ball, nImpact, vImpact, P);
+  const res = racketImpact(ball, nImpact, vImpact, P, surface);
   if (!res) return null;
   return { type: 'racket', pos: copy(ball.pos), speed: len(ball.vel), spin: len(ball.spin), racketSpeed: len(racket.vel), slid: res.slid };
 }

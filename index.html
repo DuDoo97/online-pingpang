@@ -64,6 +64,21 @@
   #face[data-mode="closed"], #face[data-mode="open"] { border-color: var(--line); }
   #face:focus-visible { outline: 2px solid var(--ball); outline-offset: 2px; }
   #face[data-mode="closed"] { color: #ff8a5c; } #face[data-mode="open"] { color: #8fd3ff; }
+  .rackets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .racket { text-align: left; font: inherit; color: var(--ink); background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 5px; padding: 8px 9px; cursor: pointer; display: flex; flex-direction: column; gap: 5px; }
+  .racket:hover, .racket:focus-visible { border-color: var(--ball); }
+  .racket[aria-pressed="true"] { border-color: var(--ball); background: rgba(255, 179, 71, 0.08); }
+  .racket .top { display: flex; align-items: center; gap: 7px; }
+  .racket .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.4); flex: 0 0 auto; }
+  .racket .nm { font-family: var(--display); font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1; }
+  .racket .bars { display: flex; flex-direction: column; gap: 2px; }
+  .racket .bar { display: flex; align-items: center; gap: 4px; font-size: 9px; letter-spacing: 0.06em; color: var(--ink-dim); text-transform: uppercase; }
+  .racket .bar i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.12); position: relative; overflow: hidden; }
+  .racket .bar i b { position: absolute; inset: 0 auto 0 0; background: var(--ball); border-radius: 2px; }
+  @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+    .rackets { grid-template-columns: repeat(3, 1fr); }
+    .racket .bars { display: none; }
+  }
   #spinBadge { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 5px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; pointer-events: none; min-height: 14px; }
   #spinBadge:empty { display: none; }
   #spinBadge[data-kind="topspin"] { border-color: #ff7a59; } #spinBadge[data-kind="backspin"] { border-color: #8fd3ff; } #spinBadge[data-kind="sidespin"] { border-color: #c8ff8f; }
@@ -278,8 +293,11 @@
     <button type="button" data-level="newbie">Newbie</button><button type="button" data-level="casual" aria-pressed="true">Casual</button><button type="button" data-level="club">Club</button><button type="button" data-level="pro">Pro</button>
   </div>
   <p id="levelBlurb" style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:-4px 0 0"></p>
-  <h3>You</h3>
-  <label><span>Grip</span>
+  <h3>Your racket</h3>
+  <div class="rackets" id="racketGrid"></div>
+  <p id="racketBlurb" style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:-4px 0 0"></p>
+  <h3>Grip</h3>
+  <label><span>Hand grip</span>
     <select id="grip"><option value="shakehand" selected>Shakehand</option><option value="penhold">Penhold (traditional)</option><option value="rpb">Penhold + RPB (reverse backhand)</option></select>
   </label>
   <p id="gripBlurb" style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:-6px 0 0"></p>
@@ -292,6 +310,10 @@
   </label>
   <label><span>Style</span>
     <select id="style"><option value="attacker" selected>Attacker: loops, flicks, smashes</option><option value="controller">Controller: blocks, pushes, drives</option><option value="chopper">Chopper: stands back and chops</option></select>
+  </label>
+  <h3>Opponent's racket</h3>
+  <label><span>Their blade</span>
+    <select id="aiRacket"></select>
   </label>
   <h3>Play</h3>
   <label><span>Landing help (0 = raw physics)</span><input type="range" id="assist" min="0" max="1" step="0.05" value="0.6"><output id="assistVal">60%</output></label>

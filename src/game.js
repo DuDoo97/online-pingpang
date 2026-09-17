@@ -174,7 +174,7 @@ export class Match {
     if (who === 'player' && this.assist > 0) {
       // Assist = a correction budget. The closest legal shot is used in full when it is within budget;
       // otherwise the ball only gets pulled part of the way and will probably miss (that is the skill part).
-      const solved = solveAssist(this.ball.pos, this.ball.vel, this.ball.spin, { serve: isServe });
+      const solved = solveAssist(this.ball.pos, this.ball.vel, this.ball.spin, { serve: isServe, surface: this.player.surface || null });
       if (solved) {
         const budget = this.assist * this.assist * 12;              // m/s of allowed velocity correction (60% -> 4.3 m/s)
         const f = solved.correction <= budget ? 1 : budget / solved.correction;
@@ -237,11 +237,11 @@ export class Match {
       if (this.state !== 'rally') continue;
 
       if (this.cooldown.player <= 0) {
-        const hit = collideRacket(this.ball, prev, this.player, PARAMS, playerFrame.refine || null);
+        const hit = collideRacket(this.ball, prev, this.player, PARAMS, playerFrame.refine || null, this.player.surface || null);
         if (hit) { this.cooldown.player = 0.08; this.handleRacket('player', hit); continue; }
       }
       if (this.cooldown.ai <= 0 && this.ball.vel.z < 0) {
-        const hit = collideRacket(this.ball, prev, this.ai.racket, PARAMS);
+        const hit = collideRacket(this.ball, prev, this.ai.racket, PARAMS, null, this.ai.racket.surface || null);
         if (hit) { this.cooldown.ai = 0.08; this.handleRacket('ai', hit); continue; }
       }
       // ball died on the table

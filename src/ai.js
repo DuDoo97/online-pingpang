@@ -28,7 +28,8 @@ const AI_STROKES = {
 const pick = (arr, rng) => arr[Math.floor(rng() * arr.length) % arr.length];
 
 export class AIPlayer {
-  constructor(level = 'medium', rng = Math.random, style = 'attacker') {
+  constructor(level = 'medium', rng = Math.random, style = 'attacker', surface = null) {
+    this.surface = surface;
     this.setLevel(level);
     this.setStyle(style);
     this.rng = rng;
@@ -43,6 +44,12 @@ export class AIPlayer {
     this.bouncedAI = false; this.bounceZ = null;
   }
   setLevel(level) { this.level = level; this.cfg = DIFFICULTY[level] || DIFFICULTY.medium; }
+  // The AI's rubber changes how it plays: an attack blade pushes it to smash, long pips to chop, anti to block.
+  applyRacketTendencies(t) {
+    this.tend = t || { power: 1, spin: 1, bias: {} };
+    this.surface = t && t.surface ? t.surface : this.surface;
+    this.cfg = { ...(DIFFICULTY[this.level] || DIFFICULTY.medium), power: (DIFFICULTY[this.level] || DIFFICULTY.medium).power * this.tend.power, spin: (DIFFICULTY[this.level] || DIFFICULTY.medium).spin * this.tend.spin };
+  }
   setStyle(style) {
     this.style = STYLES[style] ? style : 'attacker';
     this.styleCfg = STYLES[this.style];
@@ -95,15 +102,22 @@ export class AIPlayer {
     const incomingTop = spinComponents(hit.vel, hit.spin).top;
     const short = hit.bounceZ !== null && hit.bounceZ > -0.6;                 // bounced within 60 cm of the net
     const high = hit.pos.y > TABLE.height + 0.30;
+    // The racket's bias overrides the style in the everyday case: the rubber shapes what the player reaches for.
+    const bias = this.tend && this.tend.bias ? this.tend.bias : {};
     let key;
     if (high) key = pick(style.high, this.rng);
     else if (short) key = pick(style.short, this.rng);
-    else if (incomingTop < -150) key = pick(style.backspin, this.rng);        // a backspin ball: lift it or push it back
-    else key = pick(style.normal, this.rng);
+    else if (incomingTop < -150) key = pick(bias.backspin || style.backspin, this.rng);
+    else key = pick(bias.normal || style.normal, this.rng);
     const rec = AI_STROKES[key];
     const lerpR = (r, f) => r[0] + (r[1] - r[0]) * f;
-    const wantTop = lerpR(rec.spin, this.rng()) * (0.55 + 0.45 * cfg.spin);
-    const speed = lerpR(rec.speed, this.rng()) * (0.7 + 0.3 * cfg.power);
+    // Its own rubber limits what it can make: a long-pips or anti blade simply cannot put heavy spin on the ball,
+    // and a hard blade hits faster. Both are the same physics the player's racket obeys.
+    const surf = this.surface || null;
+    const brushFactor = surf ? Math.min(1.25, 0.35 + 0.75 * (surf.tangential != null ? surf.tangential : 0.8)) : 1;
+    const corFactor = surf && surf.cor != null ? 0.85 + (surf.cor - 0.76) * 1.2 : 1;
+    const wantTop = lerpR(rec.spin, this.rng()) * (0.55 + 0.45 * cfg.spin) * brushFactor;
+    const speed = lerpR(rec.speed, this.rng()) * (0.7 + 0.3 * cfg.power) * corFactor;
 
     // landing target on the player half: random, or (skilled AI) away from where the player's racket is
     let tx = (this.rng() - 0.5) * (TABLE.width - 0.35) * (0.5 + 0.5 * cfg.power);
@@ -290,7 +304,7 @@ export function planServe(from, rng = Math.random, cfg = DIFFICULTY.medium) {
 // Find the legal shot (lands on the far half; for a serve, own half first) whose launch velocity is CLOSEST to the
 // player's raw velocity, keeping their spin. Candidates vary elevation, speed and a little yaw.
 // Returns { vel, correction } or null if nothing legal exists nearby.
-export function solveAssist(pos, vel, spin, { serve = false } = {}) {
+export function solveAssist(pos, vel, spin, { serve = false, surface = null } = {}) {
   const speed0 = len(vel);
   if (speed0 < 1) return null;
   const horiz = norm(v3(vel.x, 0, vel.z));

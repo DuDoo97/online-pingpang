@@ -78,6 +78,35 @@ exactly as the mouse measures cursor speed, so the same stroke table and the sam
 The app asks for landscape (the table is wide), offers fullscreen with a landscape orientation lock where the
 browser allows it, and stays playable in portrait with a wider lens and the camera pulled back.
 
+## Rackets
+
+Six blades with genuinely different rubbers, chosen in the settings panel. A racket never changes the ball's flight,
+the strokes or the rules: it changes only what happens in the millisecond of contact, which is exactly what real
+equipment does. Both you and the opponent pick one.
+
+| Racket | Character | What it does |
+|---|---|---|
+| **All-round** | even | The default. No weakness, no weapon. |
+| **Spin machine** | tacky and slow | Heaviest loop in the game (5,191 rpm against 4,555) and the most serve spin. Slower ball, needs a full swing. |
+| **Short pips** | flat and fast | 10.1 m/s drives against 6.6. Its rubber barely grips, so it makes almost no spin (1,694 rpm loop) and is nearly deaf to yours. |
+| **Anti-spin** | dead | Absorbs pace and spin. Nothing you do makes a fast or spinny ball; your opponent has to generate everything. |
+| **All-out attack** | hard and quick | 0.96 restitution, the fastest drives and the most powerful smashes. A fast surface is also harder to keep down. |
+| **Chopper** | two-faced | Inverted forehand that can still loop; **long pips on the backhand**. Stand back and chop, and your backhand hands your opponent's own spin back to them. |
+
+The chopper is the clearest illustration of the model. A passive backhand block of 3,000 rpm topspin returns:
+
+- **All-round** → 240 rpm topspin (the attacker's spin survives, so they keep attacking)
+- **Chopper backhand** → 120 rpm **backspin** (spin reversal: their loop comes back biting them)
+- **Anti-spin** → 660 rpm backspin, at a much slower pace
+
+Three knobs do all of this, and all three are measurable on real equipment: normal restitution (rebound speed),
+friction (how hard the rubber bites), and tangential restitution (the "over-grip" that decides whether a surface
+amplifies, kills or inverts incoming spin). The measured behaviour follows the physics that was already in the
+engine: 3,000 rpm in, 240 rpm out for inverted rubber, backspin out for long pips.
+
+The opponent's racket shapes its game too. A long-pips opponent chops and pushes, an attack opponent smashes, an
+anti opponent blocks. Its rubber also limits what its shots can do, by the same maths as yours.
+
 ## Racket face angle: chop or smash on purpose
 
 The swipe chooses the stroke family and its speed sets the power, but the *face angle* is what decides how much spin
@@ -141,6 +170,7 @@ half first, a serve that clips the net is a let, volleys lose the point.
   switch, table/net/floor collisions, swept racket collision, forward simulation.
 - `src/strokes.js` — the stroke grammar: grips, stroke recipes, gesture classifier, swing synthesizer with the hand's
   face-angle solver.
+- `src/rackets.js` — the six blades: surface constants, per-wing differences, and AI tendencies.
 - `src/touch.js` — touch input: one-finger racket control, swipe-direction families, tap to serve, two-finger stance.
 - `src/levels.js` — the four player levels (assist, racket drift, racket size, ball speed, opponent, coaching).
 - `src/ai.js` — opponent: playing styles, reaction delay, physics-based intercept prediction, ballistic return solver,
@@ -149,7 +179,7 @@ half first, a serve that clips the net is a let, volleys lose the point.
 - `src/main.js` — Three.js scene, mouse racket, HUD, live physics panel.
 - `test/` — `physics.test.mjs` (ITTF drop test, terminal velocity, Magnus sign, bounce spin coupling, racket brush,
   net), `strokes.test.mjs` (gesture classification, grip rules, spin/speed of each synthesized stroke),
-  `styles.test.mjs` (each AI style rallies and uses its signature strokes), `levels.test.mjs` (all four level presets
+  `rackets.test.mjs` (each blade is physically distinct and cannot break the game), `styles.test.mjs` (each AI style rallies and uses its signature strokes), `levels.test.mjs` (all four level presets
   play as advertised: a parked-racket bot returns balls at Newbie/Casual), `pro.test.mjs` (a club-level scripted
   player wins points with raw physics), `rally.test.mjs`, `match.test.mjs`.
 - `docs/research-physics.md`, `docs/research-games-and-architecture.md` — research reports with sources.

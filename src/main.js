@@ -5,6 +5,7 @@ import { PARAMS, TABLE, BALL, spinComponents, simulateFlight, v3, len } from './
 import { GRIPS, classify, synthesize, wingFor, familyFromSwipe } from './strokes.js';
 import { LEVELS, LEVEL_ORDER } from './levels.js';
 import { TouchControls, isTouchDevice } from './touch.js';
+import { RACKETS, RACKET_ORDER, surfaceFor, surfaceParams, RACKET_AI } from './rackets.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -113,7 +114,7 @@ predLine.frustumCulled = false; predLine.visible = false; scene.add(predLine);
 
 // ---------- rackets ----------
 function makeRacket(rubber) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.rubber = rubber;
   const bladeGroup = new THREE.Group(); g.add(bladeGroup); g.blade = bladeGroup;
   const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.006, 40), new THREE.MeshStandardMaterial({ color: 0xc9a273, roughness: 0.8 }));
   blade.rotation.x = Math.PI / 2; blade.castShadow = true; bladeGroup.add(blade);
@@ -125,9 +126,12 @@ function makeRacket(rubber) {
   handle.position.y = -0.12; handle.castShadow = true;
   const handlePivot = new THREE.Group(); handlePivot.add(handle); g.add(handlePivot);
   g.handle = handlePivot;
+  g.rubberMesh = r1;                 // the face that plays the forehand: repainted when the racket changes
+  g.bhMesh = r2;
   return g;
 }
 const playerRacketMesh = makeRacket(0xc0272d); scene.add(playerRacketMesh);
+const playerRubberMesh = playerRacketMesh.rubberMesh;
 const playerRubberMats = [];
 playerRacketMesh.blade.traverse((o) => { if (o.material && o.material.color) playerRubberMats.push(o.material); });
 const aiRacketMesh = makeRacket(0xc0272d); scene.add(aiRacketMesh);
@@ -163,7 +167,8 @@ const ui = {
   log: document.getElementById('log'), stroke: document.getElementById('stroke'), strokeHint: document.getElementById('strokeHint'),
   coach: document.getElementById('coach'), stance: document.getElementById('stance'), aiShot: document.getElementById('aiShot'),
   cheat: document.getElementById('cheat'), autoAim: document.getElementById('autoAim'), autoAimVal: document.getElementById('autoAimVal'),
-  face: document.getElementById('face'),
+  face: document.getElementById('face'), racketGrid: document.getElementById('racketGrid'), racketBlurb: document.getElementById('racketBlurb'),
+  aiRacket: document.getElementById('aiRacket'),
   racketScale: document.getElementById('racketScale'), racketScaleVal: document.getElementById('racketScaleVal'),
   levelSeg: document.getElementById('levelSeg'), levelBlurb: document.getElementById('levelBlurb'), levelBadge: document.getElementById('levelBadge'),
   levelModal: document.getElementById('levelModal'),
@@ -215,6 +220,44 @@ match.assist = parseFloat(ui.assist.value);
 window.__match = match;   // for debugging / headless tests
 let lastPlayerStroke = null;
 
+// ---------- rackets ----------
+const racketState = { player: 'allround', ai: 'allround' };
+const STAT = (v, lo, hi) => Math.max(0.06, Math.min(1, (v - lo) / (hi - lo)));
+function buildRacketGrid() {
+  ui.racketGrid.innerHTML = '';
+  for (const key of RACKET_ORDER) {
+    const R = RACKETS[key];
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'racket'; b.dataset.racket = key;
+    // The bars must describe the same thing the physics does. Spin is what the rubber can put on a ball, which is
+    // its bite (grip) times its rebound (tangential restitution); speed is simply how much the blade gives back.
+    // The chopper shows its forehand, the wing most players will use.
+    const sf = surfaceFor(key, 'fh');
+    const spin = STAT(sf.grip * sf.tangential, 0.18, 1.5);
+    const speed = STAT(sf.cor, 0.64, 0.98);
+    b.innerHTML = `<span class="top"><span class="swatch" style="background:#${R.accent.toString(16).padStart(6, '0')}"></span><span class="nm">${R.label}</span></span>
+      <span class="bars"><span class="bar">spin<i><b style="width:${(spin * 100).toFixed(0)}%"></b></i></span>
+      <span class="bar">speed<i><b style="width:${(speed * 100).toFixed(0)}%"></b></i></span></span>`;
+    b.addEventListener('click', () => setPlayerRacket(key));
+    ui.racketGrid.appendChild(b);
+  }
+  for (const key of RACKET_ORDER) { const o = document.createElement('option'); o.value = key; o.textContent = RACKETS[key].label; ui.aiRacket.appendChild(o); }
+  ui.aiRacket.value = racketState.ai;
+}
+function setPlayerRacket(key, { remember = true } = {}) {
+  if (!RACKETS[key]) return;
+  racketState.player = key;
+  const R = RACKETS[key];
+  for (const b of ui.racketGrid.querySelectorAll('[data-racket]')) b.setAttribute('aria-pressed', String(b.dataset.racket === key));
+  ui.racketBlurb.innerHTML = `<b style="color:var(--ink)">${R.tagline}</b><br>+ ${R.pros.join(', ')}<br>− ${R.cons.join(', ')}`;
+  // The blade shows the rubber it is: an anti-spin blade is pale, long pips read as a dull backhand face.
+  playerRubberMesh.material.color.setHex(R.colour[0]);
+  playerRacketMesh.blade.scale.setScalar(match.racketScale);
+  if (remember) { try { localStorage.setItem('pingpang.racket', key); } catch (e) { /* ignore */ } }
+}
+function surfaceForPlayer() { return surfaceParams(racketState.player, rs.wing); }
+function surfaceForAI() { return surfaceParams(racketState.ai, 'fh'); }
+
 // ---------- player level ----------
 const settings = { level: 'casual', autoAim: 0.35, coach: true, hints: true };
 let applyingLevel = false;
@@ -224,6 +267,7 @@ function applyLevel(key, { remember = true } = {}) {
   settings.level = key; settings.autoAim = L.autoAim; settings.coach = L.coach; settings.hints = L.hints;
   match.assist = L.assist; match.racketScale = L.racketScale; match.timeScale = L.timeScale;
   match.ai.setLevel(L.ai);
+  if (match.ai.tend) match.ai.applyRacketTendencies(match.ai.tend);
   ui.assist.value = L.assist; ui.assistVal.textContent = Math.round(L.assist * 100) + '%';
   ui.autoAim.value = L.autoAim; ui.autoAimVal.textContent = Math.round(L.autoAim * 100) + '%';
   ui.racketScale.value = L.racketScale; ui.racketScaleVal.textContent = L.racketScale.toFixed(1) + '×';
@@ -348,6 +392,23 @@ touch.liftPx = Math.min(120, (typeof window !== 'undefined' ? window.innerHeight
 touch.tapTarget = null;
 
 // ---------- UI wiring ----------
+buildRacketGrid();
+{
+  let savedR = null; try { savedR = localStorage.getItem('pingpang.racket'); } catch (e) { /* ignore */ }
+  setPlayerRacket(savedR && RACKETS[savedR] ? savedR : 'allround', { remember: false });
+  let savedA = null; try { savedA = localStorage.getItem('pingpang.aiRacket'); } catch (e) { /* ignore */ }
+  racketState.ai = savedA && RACKETS[savedA] ? savedA : 'allround';
+  ui.aiRacket.value = racketState.ai;
+  match.ai.surface = surfaceParams(racketState.ai, 'fh');
+}
+ui.aiRacket.addEventListener('change', () => {
+  racketState.ai = ui.aiRacket.value;
+  match.ai.surface = surfaceParams(racketState.ai, 'fh');
+  match.ai.racket.surface = surfaceParams(racketState.ai, 'fh');
+  // their rubber shapes their game: long pips chop, anti blocks, attack blades smash
+  match.ai.applyRacketTendencies(RACKET_AI[racketState.ai] || RACKET_AI.allround);
+  try { localStorage.setItem('pingpang.aiRacket', racketState.ai); } catch (e) { /* ignore */ }
+});
 ui.level.addEventListener('change', () => { match.ai.setLevel(ui.level.value); customLevel(); });
 ui.style.addEventListener('change', () => match.ai.setStyle(ui.style.value));
 function applyGrip() {
@@ -519,10 +580,10 @@ function frame(now) {
   let sw;
   if (live && (now - lastSolve > 50 || solveKey !== lastSolveKey)) {
     lastSolve = now; lastSolveKey = solveKey;
-    sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ball0, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias);
+    sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ball0, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias, match.player.surface);
     lastSw = sw;
   } else if (live && lastSw) sw = lastSw;
-  else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, null, null, face.bias);
+  else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, null, null, face.bias, match.player.surface);
   // racket velocity for the physics: the synthesized swing plus the actual body motion in depth
   rs.vel = v3(sw.vel.x, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dtGame * 0.5);
   rs.normal = v3(sw.normal.x, sw.normal.y, sw.normal.z);
@@ -531,9 +592,12 @@ function frame(now) {
   // can be up to 50 ms stale, which at 6 m/s is 30 cm of ball travel).
   const bodyVz = (rs.pos.z - rs.prev.z) / dtGame * 0.5;
   const refine = (ballNow) => {
-    const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias);
+    const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias, match.player.surface);
     return { normal: s2.normal, vel: v3(s2.vel.x, s2.vel.y, s2.vel.z + bodyVz) };
   };
+  match.player.surface = surfaceForPlayer();
+  match.ai.surface = surfaceForAI();            // the AI's shot planner uses its rubber
+  match.ai.racket.surface = match.ai.surface;   // and the physics contact uses the same one
   match.update(dt, { prev: rs.prev, pos: rs.pos, vel: rs.vel, normal: rs.normal, stroke: { key: cls.key, label: cls.label }, refine });
 
   // --- visuals ---

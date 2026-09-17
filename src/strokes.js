@@ -105,7 +105,7 @@ function faceScore(o, targetZ, aimX) {
 // firmer against a dead ball, softer against a fast one. Gross power errors still miss.
 // `band` (optional {target, half}) pins the face near a player-chosen angle: the search still looks for the face
 // that lands the ball, but only within +/- half of the target, so the player's tilt survives contact.
-function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, aimX, band = null) {
+function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, aimX, band = null, surf = null) {
   const targetZ = DEPTH[key] ?? -0.9;
   // PINNED FACE (the player chose an angle): hold the tilt exactly and search the swing instead, so the angle the
   // player asked for is what meets the ball. A chop face gives a chop; if it cannot land, it misses, as in life.
@@ -115,7 +115,7 @@ function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, ai
     let best = { tilt, yaw: 0, k: 1, score: Infinity };
     for (const k of [1, 0.85, 1.2, 0.7, 1.4, 0.55, 1.7, 0.4, 2.0]) {
       for (const yaw of [0, -0.2, 0.2, -0.4, 0.4, -0.6, 0.6]) {
-        const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k));
+        const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k), undefined, surf);
         if (!out) continue;
         const sc = faceScore(flightOutcome(out, from0), targetZ, aimX) + Math.abs(yaw) * 0.02 + Math.abs(k - 1) * 0.3;
         if (sc < best.score) best = { tilt, yaw, k, score: sc };
@@ -125,7 +125,7 @@ function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, ai
   }
   const from = racketPos ? { x: racketPos.x, y: racketPos.y, z: racketPos.z - 0.03 } : { x: ball.pos.x, y: ball.pos.y, z: ball.pos.z };
   const evalFace = (tilt, yaw, k) => {
-    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k));
+    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k), undefined, surf);
     return out ? faceScore(flightOutcome(out, from), targetZ, aimX) + Math.abs(tilt - base) * 0.002 + Math.abs(yaw) * 0.02 + Math.abs(k - 1) * 0.3 : 6;
   };
   // With a band, the base of the search is the player's angle and the tilt wander is capped.
@@ -148,10 +148,10 @@ function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, ai
   return best;
 }
 // Serve: choose the tilt whose ball bounces on the own half and then lands on the far half, near mid-depth.
-function solveTiltServe(S, base, W, brush, through, vx, yaw, ball, racketPos) {
+function solveTiltServe(S, base, W, brush, through, vx, yaw, ball, racketPos, surf = null) {
   let best = base, bestScore = Infinity;
   for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 4) {
-    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush, through, vx));
+    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush, through, vx), undefined, surf);
     if (!out) continue;
     const t = new Ball(); t.pos = { ...racketPos, z: racketPos.z - 0.03 }; t.vel = out.vel; t.spin = out.spin; t.active = true;
     let nb = 0;
@@ -248,7 +248,7 @@ export function familyFromSwipe(vx, vy) {
 // Turn the gesture into the racket's velocity and face normal (player faces −z).
 // vel = brush along the face tangent + through toward the net + lateral. When `ball` (the incoming ball) and
 // `racketPos` are given, the hand solves the face tilt for the stroke's natural launch angle.
-export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}, ball = null, racketPos = null, tiltBias = 0) {
+export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}, ball = null, racketPos = null, tiltBias = 0, surf = null) {
   const S = STROKES[key] || STROKES.flat; const G = GRIPS[grip] || GRIPS.shakehand; const W = G[wing] || G.fh;
   let tilt = S.tilt;
   const inTop = ctx.incomingTop || 0;
@@ -256,7 +256,10 @@ export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = 
   if (key === 'serveSide') tilt = button === 'R' ? 30 : button === 'L' ? -15 : 8;
   tilt = clamp(tilt, W.minTilt, W.maxTilt);
   const moving = speed > 0.3;
-  const brushGain = W.brush * (key.startsWith('serve') ? G.serveBrush : 1);
+  // A surface's bite sets how much of the wrist's brush becomes spin. Inverted rubber is near 1; long pips can
+  // only make a fraction of it, which is why a pips player cannot loop — the rubber, not the technique.
+  const surfaceBrush = surf ? Math.min(1.3, 0.35 + 0.75 * (surf.tangential != null ? surf.tangential : 0.8)) : 1;
+  const brushGain = W.brush * (key.startsWith('serve') ? G.serveBrush * (surf && surf.serveBrush ? surf.serveBrush : 1) : 1) * surfaceBrush;
   const brush = (S.brush * speed + (moving ? S.brushBase : 0)) * brushGain;
   const through = (S.through * Math.max(0, fwd) + (moving ? S.base : 0)) * W.speed;
   let yaw = clamp(vx * 0.035, -0.35, 0.35);            // no ball to read: the face turns a little toward where the racket travels
@@ -268,10 +271,10 @@ export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = 
     : null;
   if (band) tilt = band.target;
   if (ball) {
-    if (key.startsWith('serve') && racketPos) tilt = solveTiltServe(S, tilt, W, brush, through, vx, yaw, ball, racketPos);
+    if (key.startsWith('serve') && racketPos) tilt = solveTiltServe(S, tilt, W, brush, through, vx, yaw, ball, racketPos, surf);
     else if (!key.startsWith('serve')) {
       const aimX = clamp(vx * 0.15, -0.55, 0.55);      // swipe toward where you want the ball to go
-      const f = solveFaceRally(S, key, tilt, W, brush, through, vx, ball, racketPos, aimX, band);
+      const f = solveFaceRally(S, key, tilt, W, brush, through, vx, ball, racketPos, aimX, band, surf);
       tilt = f.tilt; yaw = f.yaw; k = f.k;
     }
   }
