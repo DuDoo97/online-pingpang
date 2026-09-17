@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Online Pingpang</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ink: #eef1f4; --ink-dim: #9aa4b1; --ground: #12151a; --panel: rgba(18, 21, 26, 0.82);
+    --table: #1d4f8f; --ball: #ffb347; --you: #ffb347; --ai: #8fd3ff; --line: rgba(238, 241, 244, 0.14);
+    --display: "Barlow Condensed", "Arial Narrow", Impact, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  html, body { height: 100%; margin: 0; background: var(--ground); color: var(--ink); font-family: var(--mono); font-size: 13px; overflow: hidden; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: none; touch-action: none; }
+  .hud { position: fixed; pointer-events: none; }
+  #top { top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 18px; gap: 16px; }
+  #score { font-family: var(--display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; display: flex; gap: 12px; align-items: baseline; }
+  #score .you { color: var(--you); } #score .ai { color: var(--ai); } #score .sep { color: var(--ink-dim); font-size: 36px; }
+  #rally { color: var(--ink-dim); margin-top: 4px; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+  #right { text-align: right; }
+  #shot { color: var(--ink); font-size: 13px; }
+  #tilt { color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+  #msg { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); font-family: var(--display); font-weight: 500; font-size: 26px; letter-spacing: 0.01em; text-align: center; max-width: 80vw; text-wrap: balance; text-shadow: 0 2px 12px rgba(0,0,0,.6); pointer-events: none; }
+  #strokeBox { position: fixed; left: 50%; bottom: 58px; transform: translateX(-50%); text-align: center; pointer-events: none; }
+  #stroke { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: 0.03em; text-transform: uppercase; line-height: 1; text-shadow: 0 2px 10px rgba(0,0,0,.6); transition: color .12s; }
+  #stroke[data-family="top"] { color: #ff8a5c; } #stroke[data-family="back"] { color: #8fd3ff; } #stroke[data-family="flat"] { color: var(--ink); }
+  #stroke.hit { color: var(--ball); }
+  #strokeHint { font-size: 11px; color: var(--ink-dim); letter-spacing: 0.04em; margin-top: 4px; min-height: 14px; }
+  #coach { position: fixed; left: 50%; top: 27%; transform: translateX(-50%); max-width: 70vw; text-align: center; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--ball); padding: 8px 12px; border-radius: 4px; pointer-events: none; text-wrap: balance; }
+  #coach:empty { display: none; }
+  #stance { color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+  #aiShot { color: var(--ai); font-size: 12px; margin-top: 6px; }
+  #cheat { position: fixed; left: 18px; top: 124px; bottom: 18px; overflow-y: auto; box-sizing: border-box; transform: translateX(-110%); transition: transform .25s ease; background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; width: 330px; max-width: 88vw; font-size: 12px; line-height: 1.5; }
+  #cheat.open { transform: none; }
+  #cheat h2 { font-family: var(--display); font-size: 20px; margin: 0 0 8px; letter-spacing: 0.03em; text-transform: uppercase; }
+  #cheat h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin: 10px 0 4px; font-weight: 500; }
+  #cheat table { border-collapse: collapse; width: 100%; } #cheat td { padding: 2px 6px 2px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  #cheat td:first-child { white-space: nowrap; color: var(--ink); font-weight: 500; }
+  #cheat .top { color: #ff8a5c; } #cheat .back { color: #8fd3ff; }
+  #toggleCheat { position: fixed; left: 18px; top: 14px; transform: translateY(74px); font: inherit; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  #spinBadge { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 5px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; pointer-events: none; min-height: 14px; }
+  #spinBadge:empty { display: none; }
+  #spinBadge[data-kind="topspin"] { border-color: #ff7a59; } #spinBadge[data-kind="backspin"] { border-color: #8fd3ff; } #spinBadge[data-kind="sidespin"] { border-color: #c8ff8f; }
+  #log { position: fixed; left: 18px; bottom: 18px; white-space: pre; color: var(--ink-dim); font-size: 11px; line-height: 1.5; pointer-events: none; }
+  #help { position: fixed; right: 18px; bottom: 18px; max-width: 380px; color: var(--ink-dim); font-size: 11px; line-height: 1.6; text-align: right; pointer-events: none; }
+  #help b { color: var(--ink); font-weight: 500; }
+  #side { position: fixed; top: 0; right: 0; height: 100%; width: 300px; max-width: 90vw; background: var(--panel); backdrop-filter: blur(10px); border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .25s ease; padding: 18px; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  #side.open { transform: none; }
+  #side h2 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 0; letter-spacing: 0.03em; text-transform: uppercase; }
+  #side h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); margin: 8px 0 0; font-weight: 500; }
+  #side label { display: grid; grid-template-columns: 1fr 44px; gap: 4px 8px; align-items: center; font-size: 12px; }
+  #side label span { grid-column: 1 / -1; color: var(--ink-dim); }
+  #side input[type=range] { width: 100%; accent-color: var(--ball); }
+  #side output { text-align: right; font-variant-numeric: tabular-nums; }
+  #side select { font: inherit; background: #1b2028; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; grid-column: 1 / -1; }
+  #side .row { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+  #side .row input { accent-color: var(--ball); }
+  #side button { font: inherit; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+  #side button:hover { border-color: var(--ink-dim); }
+  #togglePanel { position: fixed; top: 14px; right: 18px; transform: translateY(74px); font: inherit; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  #side.open ~ #togglePanel { right: 318px; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ball); outline-offset: 2px; }
+  @media (max-width: 1100px) { #help { display: none; } }
+  @media (max-width: 640px) { #score { font-size: 40px; } #msg { font-size: 20px; } #stroke { font-size: 22px; } }
+  @media (prefers-reduced-motion: reduce) { #side { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="top" class="hud">
+  <div>
+    <div id="score"><span class="you">0</span><span class="sep">·</span><span class="ai">0</span></div>
+    <div id="rally">rally 0 · best 0 · you serve</div>
+  </div>
+  <div id="right">
+    <div id="shot">—</div>
+    <div id="stance">Close to the table · flicks and blocks</div>
+    <div id="aiShot"></div>
+  </div>
+</div>
+<div id="msg"></div>
+<div id="coach"></div>
+<div id="strokeBox"><div id="stroke" data-family="flat">FH Block</div><div id="strokeHint"></div></div>
+<div id="spinBadge"></div>
+<div id="log"></div>
+<div id="help">
+  <b>mouse</b> racket · <b>swipe</b> at the ball = swing · <b>hold left</b> topspin · <b>hold right</b> backspin<br>
+  <b>click / space</b> toss serve · <b>wheel / W S</b> step back or in · <b>H</b> stroke guide<br>
+  <b>R</b> restart · first to 11, win by 2
+</div>
+
+<aside id="cheat">
+  <h2>Stroke guide</h2>
+  <p style="margin:0 0 6px;color:var(--ink-dim)">No menus. A stroke is <b>which button</b> you hold, <b>how hard</b> you swipe at the ball, and <b>where</b> you are. The label above the table shows what you are loaded for.</p>
+  <h3>Hold left · <span class="top">topspin family</span></h3>
+  <table>
+    <tr><td>Block</td><td>keep the racket still</td></tr>
+    <tr><td>Drive</td><td>medium swipe</td></tr>
+    <tr><td>Loop</td><td>hard swipe: heavy topspin</td></tr>
+    <tr><td>Smash</td><td>hard swipe at a high ball</td></tr>
+    <tr><td>Flick</td><td>swipe at a short ball: the racket steps in for you</td></tr>
+    <tr><td>Banana flick</td><td>swipe <em>across</em> a short ball: sidespin</td></tr>
+    <tr><td>Lob</td><td>from far back (wheel down): swipe</td></tr>
+  </table>
+  <h3>Hold right · <span class="back">backspin family</span></h3>
+  <table>
+    <tr><td>Short push</td><td>gentle touch: keeps it short</td></tr>
+    <tr><td>Push</td><td>medium swipe</td></tr>
+    <tr><td>Fast long push</td><td>hard swipe: deep and quick</td></tr>
+    <tr><td>Chop</td><td>from far back: swipe</td></tr>
+  </table>
+  <h3>Serve · click then swipe at the falling toss</h3>
+  <table>
+    <tr><td>Topspin / backspin</td><td>hold left / right while you swipe</td></tr>
+    <tr><td>Sidespin</td><td>swipe sideways across the toss</td></tr>
+    <tr><td>Receive</td><td>the next shot is labelled as a receive: short push a short serve, flick or loop a long one</td></tr>
+  </table>
+  <h3>Grips (settings)</h3>
+  <table>
+    <tr><td>Shakehand</td><td>even wings, black face on the backhand</td></tr>
+    <tr><td>Penhold</td><td>spinnier forehand and serves; backhand can only push, block, drive</td></tr>
+    <tr><td>Penhold + RPB</td><td>reverse face frees the backhand: <b>RPB Loop</b>, <b>RPB Banana flick</b></td></tr>
+  </table>
+</aside>
+<button id="toggleCheat">stroke guide · H</button>
+
+<aside id="side">
+  <h2>Online Pingpang</h2>
+  <h3>You</h3>
+  <label><span>Grip</span>
+    <select id="grip"><option value="shakehand" selected>Shakehand</option><option value="penhold">Penhold (traditional)</option><option value="rpb">Penhold + RPB (reverse backhand)</option></select>
+  </label>
+  <p id="gripBlurb" style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:-6px 0 0"></p>
+  <label><span>Handedness</span>
+    <select id="hand"><option value="right" selected>Right-handed</option><option value="left">Left-handed</option></select>
+  </label>
+  <h3>Opponent</h3>
+  <label><span>Level</span>
+    <select id="level"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select>
+  </label>
+  <label><span>Style</span>
+    <select id="style"><option value="attacker" selected>Attacker: loops, flicks, smashes</option><option value="controller">Controller: blocks, pushes, drives</option><option value="chopper">Chopper: stands back and chops</option></select>
+  </label>
+  <h3>Play</h3>
+  <label><span>Shot assist (0 = raw physics)</span><input type="range" id="assist" min="0" max="1" step="0.05" value="0.6"><output id="assistVal">60%</output></label>
+  <label><span>Camera</span>
+    <select id="camsel"><option value="home" selected>Behind player</option><option value="side">Side</option><option value="top">Top</option></select>
+  </label>
+  <div class="row"><input type="checkbox" id="slow"><label for="slow">Slow motion (0.35×)</label></div>
+  <div class="row"><input type="checkbox" id="pred"><label for="pred">Show predicted path</label></div>
+  <h3>Physics (live)</h3>
+  <div id="params" style="display:flex;flex-direction:column;gap:10px"></div>
+  <button id="resetParams">Reset physics to measured values</button>
+  <p style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:0">Ball 40 mm · 2.7 g · thin shell. Drag ½ρCdA|v|v, Magnus Cl=S/(2S+1), table COR 0.98−0.02|v|, racket COR 0.878−0.020|v|, rubber e_t≈0.8 (Conti et al. 2026, Nakashima 2010, ITTF T3).</p>
+</aside>
+<button id="togglePanel">settings · physics</button>
+
+<script type="module" src="dist/bundle.js"></script>
+</body>
+</html>
