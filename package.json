@@ -8,7 +8,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/physics.test.mjs && node test/strokes.test.mjs && node test/styles.test.mjs",
+    "test": "node test/physics.test.mjs && node test/strokes.test.mjs && node test/styles.test.mjs && node test/levels.test.mjs && node test/pro.test.mjs",
     "dev": "esbuild src/main.js --bundle --outfile=dist/bundle.js --servedir=. --serve=127.0.0.1:8173 --watch",
     "build": "esbuild src/main.js --bundle --minify --outfile=dist/bundle.js",
     "single": "node scripts/build-single.mjs"

@@ -12,6 +12,7 @@ export class Match {
     this.player = new Racket(v3(0, TABLE.height + 0.25, TABLE.length / 2 + 0.35), v3(0, 0, -1));
     this.ai = new AIPlayer(level, rng, style);
     this.assist = 0.6;          // 0 = raw physics, 1 = every hit is steered onto the table
+    this.racketScale = 1;       // player blade radius multiplier (bigger = forgiving)
     this.timeScale = 1;
     this.physicsHz = 360;
     this.reset();
@@ -169,6 +170,7 @@ export class Match {
     this.bounces = [];
     this.servePhase = isServe;
     this.serveNet = false;
+    if (who === 'player') this.debug = { raw: { ...this.ball.vel }, rawSpin: { ...this.ball.spin }, normal: { ...this.player.normal }, racketVel: { ...this.player.vel }, pos: { ...this.ball.pos } };
     if (who === 'player' && this.assist > 0) {
       // Assist = a correction budget. The closest legal shot is used in full when it is within budget;
       // otherwise the ball only gets pulled part of the way and will probably miss (that is the skill part).
@@ -178,7 +180,8 @@ export class Match {
         const f = solved.correction <= budget ? 1 : budget / solved.correction;
         this.ball.vel = lerp(this.ball.vel, solved.vel, f);
         this.lastAssist = { correction: solved.correction, applied: f };
-      } else this.lastAssist = { correction: Infinity, applied: 0 };
+        this.debug.solved = { ...solved.vel }; this.debug.applied = f;
+      } else { this.lastAssist = { correction: Infinity, applied: 0 }; this.debug.solved = null; }
     }
     if (who === 'ai' && this.ai.plan && this.ai.plan.shot && !this.ai.plan.willMiss) {
       // The AI's racket swing is cosmetic: its contact resolves to the shot it solved with the real flight physics
@@ -209,6 +212,8 @@ export class Match {
       this.player.pos = lerp(playerFrame.prev, playerFrame.pos, (i + 1) / n);
       this.player.vel = playerFrame.vel;
       this.player.normal = playerFrame.normal;
+      this.player.radius = 0.08 * this.racketScale;
+      this.ai.playerX = this.player.pos.x;
       this.ai.update(hs, this.ball, { rallyOver: this.state !== 'rally' });
       this.cooldown.player = Math.max(0, this.cooldown.player - hs);
       this.cooldown.ai = Math.max(0, this.cooldown.ai - hs);
@@ -232,7 +237,7 @@ export class Match {
       if (this.state !== 'rally') continue;
 
       if (this.cooldown.player <= 0) {
-        const hit = collideRacket(this.ball, prev, this.player, PARAMS);
+        const hit = collideRacket(this.ball, prev, this.player, PARAMS, playerFrame.refine || null);
         if (hit) { this.cooldown.player = 0.08; this.handleRacket('player', hit); continue; }
       }
       if (this.cooldown.ai <= 0 && this.ball.vel.z < 0) {

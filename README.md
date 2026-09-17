@@ -16,6 +16,37 @@ npm run single     # dist/pingpang.html — one self-contained file you can doub
 
 Deploys: every push to `main` runs the tests, builds, and publishes to GitHub Pages via `.github/workflows/pages.yml`.
 
+## Levels
+
+The ball physics never changes. A level is how much the game helps you, picked on first visit (or keys 1–4, or the
+badge under the score):
+
+| Level | Landing help | Racket drift to the ball | Racket size | Ball speed | Opponent | Coach / hints |
+|---|---|---|---|---|---|---|
+| **Newbie** | 95 % | 70 % | 1.5× | 0.8× | Easy | on |
+| **Casual** | 60 % | 35 % | 1.2× | 1× | Medium | on |
+| **Club** | 30 % | 10 % | 1× | 1× | Hard | on |
+| **Pro** | none | none | 1× | 1× | Pro: places the ball away from your racket | off |
+
+At every level your *hand* does the technique: given the swing you asked for, it searches the racket face (tilt and
+yaw) whose real drag-and-Magnus flight lands at the stroke's natural depth, and steps your feet in or back so the
+ball is met near the top of its bounce rather than dug off the floor. What is left to you is power, timing and
+placement. Swipe too hard at any level and the ball is long, no matter what the face does.
+
+Implementation notes, because they are the interesting part:
+
+- The hand re-solves the face **at the instant of contact**, not at frame time. A 50 ms old solution is 30 cm of ball
+  travel, which turned shots into net balls.
+- It solves tilt and yaw **jointly**: the set of faces that puts the ball on the table is a narrow pocket, and a
+  tilt-only line search steps straight over it.
+- When no face lands the player's power, the hand may adjust its touch (x0.7 to x1.7): firmer against a dead ball,
+  softer against a fast one. Gross power errors still miss.
+- Solving costs 1-3 ms, so it runs at 20 Hz plus once at contact, never inside the 360 Hz physics loop.
+- Landing help is a **correction budget** towards the nearest legal shot, not a blend of raw and legal velocities:
+  that set is not convex, so a blend is usually illegal.
+
+The sliders in the settings panel let you mix your own level.
+
 ## Controls: the stroke grammar
 
 There is no stroke menu. A stroke is **which button you hold**, **how hard you swipe at the ball**, and **where you
@@ -46,14 +77,18 @@ half first, a serve that clips the net is a let, volleys lose the point.
 
 - `src/physics.js` — dependency-free ball physics (SI units). Aerodynamics, impulse-based impact with rolling/sliding
   switch, table/net/floor collisions, swept racket collision, forward simulation.
-- `src/strokes.js` — the stroke grammar: grips, stroke recipes, gesture classifier, swing synthesizer.
+- `src/strokes.js` — the stroke grammar: grips, stroke recipes, gesture classifier, swing synthesizer with the hand's
+  face-angle solver.
+- `src/levels.js` — the four player levels (assist, racket drift, racket size, ball speed, opponent, coaching).
 - `src/ai.js` — opponent: playing styles, reaction delay, physics-based intercept prediction, ballistic return solver,
   serve solver, and the player's shot-assist solver.
 - `src/game.js` — match rules and the fixed-step loop (headless, testable).
 - `src/main.js` — Three.js scene, mouse racket, HUD, live physics panel.
 - `test/` — `physics.test.mjs` (ITTF drop test, terminal velocity, Magnus sign, bounce spin coupling, racket brush,
   net), `strokes.test.mjs` (gesture classification, grip rules, spin/speed of each synthesized stroke),
-  `rally.test.mjs` (scripted bot vs AI), `match.test.mjs`.
+  `styles.test.mjs` (each AI style rallies and uses its signature strokes), `levels.test.mjs` (all four level presets
+  play as advertised: a parked-racket bot returns balls at Newbie/Casual), `pro.test.mjs` (a club-level scripted
+  player wins points with raw physics), `rally.test.mjs`, `match.test.mjs`.
 - `docs/research-physics.md`, `docs/research-games-and-architecture.md` — research reports with sources.
 
 ## Physics model (numbers from the literature)

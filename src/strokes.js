@@ -6,7 +6,7 @@
 // synthesizes the racket swing: a "brush" along the face tangent plus a "through" drive toward the net.
 // The physics does the rest, so a loop is a fast upward brush with a closed face hitting the real ball,
 // not a canned outcome.
-import { norm } from './physics.js';
+import { norm, previewRacketImpact, simulateFlight, Ball, TABLE, v3 } from './physics.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -40,23 +40,111 @@ export const GRIPS = {
 // brush: racket speed along the face tangent per unit gesture speed (+ up = topspin, − down = backspin), brushBase added when moving.
 // through: horizontal drive toward the net per unit gesture speed, base added when moving. lateral: sidespin gain.
 export const STROKES = {
-  block:     { label: 'Block',          tilt: -12, brush: 0.15,  brushBase: 0.2,  through: 0.3,  base: 0.25, lateral: 0.3, hint: 'racket still: uses the ball\'s own pace' },
+  block:     { label: 'Block',          tilt: -12, brush: 0.15,  brushBase: 0.2,  through: 0.3,  base: 0.6,  lateral: 0.3, hint: 'racket still: uses the ball\'s own pace' },
   drive:     { label: 'Drive',          tilt: -15, brush: 0.35,  brushBase: 0.4,  through: 0.9,  base: 0.7,  lateral: 0.6, hint: 'left button, medium swipe toward the ball' },
   loop:      { label: 'Loop',           tilt: -35, brush: 0.85,  brushBase: 1.2,  through: 0.7,  base: 0.9,  lateral: 0.5, hint: 'left button, hard swipe: heavy topspin' },
   smash:     { label: 'Smash',          tilt: -8,  brush: 0.1,   brushBase: 0.3,  through: 1.3,  base: 1.6,  lateral: 0.6, hint: 'high ball, hard swipe: flat and fast' },
   flick:     { label: 'Flick',          tilt: -20, brush: 0.7,   brushBase: 0.8,  through: 0.7,  base: 0.8,  lateral: 0.5, hint: 'short ball, left button: attack over the table' },
   banana:    { label: 'Banana flick',   tilt: -20, brush: 0.65,  brushBase: 0.8,  through: 0.6,  base: 0.7,  lateral: 1.1, hint: 'short ball, left button, swipe across: sidespin flick' },
   lob:       { label: 'Lob',            tilt: 10,  brush: 1.2,   brushBase: 1.5,  through: 0.25, base: 0.4,  lateral: 0.5, hint: 'far back, left button: high topspin ball' },
-  shortpush: { label: 'Short push',     tilt: 42,  brush: -0.5,  brushBase: -0.5, through: 0.45, base: 0.3,  lateral: 0.3, hint: 'right button, gentle touch: keeps it short' },
-  push:      { label: 'Push',           tilt: 35,  brush: -0.6,  brushBase: -0.6, through: 0.65, base: 0.6,  lateral: 0.4, hint: 'right button, medium swipe: backspin' },
-  longpush:  { label: 'Fast long push', tilt: 28,  brush: -0.5,  brushBase: -0.6, through: 0.85, base: 0.9,  lateral: 0.5, hint: 'right button, hard swipe: deep backspin' },
-  chop:      { label: 'Chop',           tilt: 50,  brush: -1.1,  brushBase: -1.4, through: 0.4,  base: 0.5,  lateral: 0.4, hint: 'far back, right button: heavy backspin defence' },
+  shortpush: { label: 'Short push',     tilt: 42,  brush: -0.35, brushBase: -0.3, through: 0.1,  base: 0.0,  lateral: 0.3, hint: 'right button, gentle touch: keeps it short' },
+  push:      { label: 'Push',           tilt: 35,  brush: -0.45, brushBase: -0.4, through: 0.2,  base: 0.1,  lateral: 0.4, hint: 'right button, medium swipe: backspin' },
+  longpush:  { label: 'Fast long push', tilt: 28,  brush: -0.4,  brushBase: -0.5, through: 0.3,  base: 0.2,  lateral: 0.5, hint: 'right button, hard swipe: deep backspin' },
+  chop:      { label: 'Chop',           tilt: 50,  brush: -0.9,  brushBase: -1.1, through: 0.15, base: 0.15, lateral: 0.4, hint: 'far back, right button: heavy backspin defence' },
   flat:      { label: 'Flat hit',       tilt: -4,  brush: 0.1,   brushBase: 0.1,  through: 0.95, base: 0.6,  lateral: 0.6, hint: 'no button: flat, little spin' },
   serveTop:  { label: 'Topspin serve',  tilt: -28, brush: 0.9,   brushBase: 1.0,  through: 0.5,  base: 0.5,  lateral: 0.5, hint: 'hold left, swipe at the falling toss' },
   serveBack: { label: 'Backspin serve', tilt: 45,  brush: -0.9,  brushBase: -1.0, through: 0.55, base: 0.5,  lateral: 0.5, hint: 'hold right, swipe at the falling toss' },
   serveSide: { label: 'Sidespin serve', tilt: 8,   brush: 0.2,   brushBase: 0.2,  through: 0.5,  base: 0.5,  lateral: 1.4, hint: 'swipe sideways across the toss' },
   serveFlat: { label: 'Flat serve',     tilt: 0,   brush: 0.1,   brushBase: 0.1,  through: 0.85, base: 0.6,  lateral: 0.5, hint: 'no button: hit the toss forward' },
 };
+
+// The player's HAND sets the face angle: given the swing the gesture asked for, it picks the tilt whose flight
+// lands at the stroke's natural depth (with the real drag + Magnus flight). That is technique and it is on at
+// every level. Power is the player's job: swipe too hard and no face angle can keep the ball on the table.
+const DEPTH = { shortpush: -0.35, block: -0.75, push: -0.95, longpush: -1.15, chop: -1.0, lob: -0.95, smash: -1.0, loop: -0.95, drive: -0.95, flat: -0.9, flick: -0.9, banana: -0.9 };
+
+function faceNormal(tilt, yaw) {
+  const t = tilt * Math.PI / 180;
+  return norm({ x: Math.sin(yaw) * Math.cos(t), y: Math.sin(t), z: -Math.cos(yaw) * Math.cos(t) });
+}
+function swingVel(S, tilt, brush, through, vx) {
+  const t = tilt * Math.PI / 180;
+  const u = { x: 0, y: Math.cos(t), z: Math.sin(t) };          // "up the face"
+  return { x: vx * S.lateral, y: brush * u.y, z: brush * u.z - through };
+}
+// Where does the ball go for a candidate face? {kind, pos}: kind = 'land' | 'net' | 'own' | 'long' | 'none'
+function flightOutcome(out, from) {
+  const t = new Ball(); t.pos = { ...from }; t.vel = out.vel; t.spin = out.spin; t.active = true;
+  let prevZ = t.pos.z, clearance = null;
+  const r = simulateFlight(t, undefined, { maxTime: 1.6, dt: 1 / 90, stop: (b, tt, ev) => {
+    if (clearance === null && prevZ > 0 && b.pos.z <= 0) clearance = b.pos.y - (TABLE.height + TABLE.netHeight);
+    prevZ = b.pos.z;
+    return ev.length > 0;
+  } });
+  const e = r.events[0];
+  if (!e) return { kind: 'none', pos: t.pos, clearance };
+  if (e.type === 'bounce') return { kind: e.side === 'ai' ? 'land' : 'own', pos: e.pos, clearance };
+  if (e.type === 'net') return { kind: 'net', pos: e.pos, clearance };
+  return { kind: 'long', pos: e.pos, clearance };
+}
+// 0..1 = landed (distance from the wanted spot, thin net clearance penalised), 2+ = net, 3+ = long or wide,
+// 4 = own side, 5 = nothing.
+function faceScore(o, targetZ, aimX) {
+  if (o.kind === 'land') {
+    const thin = o.clearance === null ? 0 : Math.max(0, 0.10 - o.clearance) * 4;   // want >= 10 cm over the net
+    return Math.abs(o.pos.z - targetZ) * 0.4 + Math.abs(o.pos.x - aimX) * 0.6 + thin;
+  }
+  if (o.kind === 'net') return 2 + Math.max(0, TABLE.height + TABLE.netHeight - o.pos.y);
+  if (o.kind === 'own') return 4;
+  if (o.kind === 'long') return 3 + Math.min(1, Math.abs(Math.abs(o.pos.z) - TABLE.length / 2) * 0.3) + Math.min(1, Math.max(0, Math.abs(o.pos.x) - TABLE.width / 2));
+  return 5;
+}
+// The hand: given the swing the gesture asked for, choose face tilt AND yaw so the real flight lands at the
+// stroke's natural depth, aimed at `aimX`. The feasible faces form a narrow tilt×yaw pocket, so the coarse search
+// is a joint grid. If no face lands at the player's power, the hand may adjust its touch a little (×0.7..×1.7):
+// firmer against a dead ball, softer against a fast one. Gross power errors still miss.
+function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, aimX) {
+  const targetZ = DEPTH[key] ?? -0.9;
+  const from = racketPos ? { x: racketPos.x, y: racketPos.y, z: racketPos.z - 0.03 } : { x: ball.pos.x, y: ball.pos.y, z: ball.pos.z };
+  const evalFace = (tilt, yaw, k) => {
+    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k));
+    return out ? faceScore(flightOutcome(out, from), targetZ, aimX) + Math.abs(tilt - base) * 0.002 + Math.abs(yaw) * 0.02 + Math.abs(k - 1) * 0.3 : 6;
+  };
+  let best = { tilt: base, yaw: 0, k: 1, score: Infinity };
+  const tryFace = (tilt, yaw, k) => { if (tilt < W.minTilt || tilt > W.maxTilt) return; const sc = evalFace(tilt, yaw, k); if (sc < best.score) best = { tilt, yaw, k, score: sc }; };
+  for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 6) for (const yaw of [-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6]) tryFace(tilt, yaw, 1);
+  if (best.score >= 2) {
+    for (const k of [1.35, 0.7, 1.7]) {
+      for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 6) for (const yaw of [-0.4, -0.2, 0, 0.2, 0.4]) tryFace(tilt, yaw, k);
+      if (best.score < 2) break;
+    }
+  }
+  const c = { ...best };
+  for (const d of [-4, -2, 2, 4]) for (const dy of [-0.1, 0, 0.1]) tryFace(c.tilt + d, c.yaw + dy, c.k);
+  const c2 = { ...best };
+  for (const d of [-1, 1]) tryFace(c2.tilt + d, c2.yaw, c2.k);
+  return best;
+}
+// Serve: choose the tilt whose ball bounces on the own half and then lands on the far half, near mid-depth.
+function solveTiltServe(S, base, W, brush, through, vx, yaw, ball, racketPos) {
+  let best = base, bestScore = Infinity;
+  for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 4) {
+    const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush, through, vx));
+    if (!out) continue;
+    const t = new Ball(); t.pos = { ...racketPos, z: racketPos.z - 0.03 }; t.vel = out.vel; t.spin = out.spin; t.active = true;
+    let nb = 0;
+    const r = simulateFlight(t, undefined, { maxTime: 1.6, dt: 1 / 120, stop: (b, tt, ev) => { nb += ev.filter(e => e.type === 'bounce').length; return nb >= 2 || ev.some(e => e.type === 'net' || e.type === 'floor' || e.type === 'side'); } });
+    const bounces = r.events.filter(e => e.type === 'bounce');
+    const bad = r.events.some(e => e.type === 'net' || e.type === 'floor' || e.type === 'side');
+    let score;
+    if (bounces.length >= 2 && bounces[0].side === 'player' && bounces[1].side === 'ai' && !bad) score = Math.abs(bounces[1].pos.z + 0.75);
+    else if (bounces.length >= 1 && bounces[0].side === 'player') score = 5 + (bad ? 1 : 0);
+    else score = 10;
+    score += Math.abs(tilt - base) * 0.01;
+    if (score < bestScore) { bestScore = score; best = tilt; }
+  }
+  return best;
+}
 
 export function wingTag(grip, wing) {
   const G = GRIPS[grip] || GRIPS.shakehand;
@@ -107,23 +195,28 @@ export function classify({ button = null, speed = 0, vx = 0, fwd = 0, ctx = {}, 
 }
 
 // Turn the gesture into the racket's velocity and face normal (player faces −z).
-// vel = brush along the face tangent + through toward the net + lateral.
-export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}) {
+// vel = brush along the face tangent + through toward the net + lateral. When `ball` (the incoming ball) and
+// `racketPos` are given, the hand solves the face tilt for the stroke's natural launch angle.
+export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}, ball = null, racketPos = null) {
   const S = STROKES[key] || STROKES.flat; const G = GRIPS[grip] || GRIPS.shakehand; const W = G[wing] || G.fh;
   let tilt = S.tilt;
   const inTop = ctx.incomingTop || 0;
   if (key === 'block') tilt = inTop > 150 ? -30 : inTop < -150 ? 15 : -12;         // read the spin: close vs topspin, open vs backspin
   if (key === 'serveSide') tilt = button === 'R' ? 30 : button === 'L' ? -15 : 8;
   tilt = clamp(tilt, W.minTilt, W.maxTilt);
-  const t = tilt * Math.PI / 180;
   const moving = speed > 0.3;
   const brushGain = W.brush * (key.startsWith('serve') ? G.serveBrush : 1);
   const brush = (S.brush * speed + (moving ? S.brushBase : 0)) * brushGain;
   const through = (S.through * Math.max(0, fwd) + (moving ? S.base : 0)) * W.speed;
-  // face tangent pointing "up the face": for an open face it leans back, for a closed face it leans forward
-  const u = { x: 0, y: Math.cos(t), z: Math.sin(t) };
-  const vel = { x: vx * S.lateral, y: brush * u.y, z: brush * u.z - through };
-  const yaw = clamp(vx * 0.035, -0.35, 0.35);          // the face turns a little toward where the racket travels
-  const normal = norm({ x: Math.sin(yaw) * Math.cos(t), y: Math.sin(t), z: -Math.cos(yaw) * Math.cos(t) });
-  return { vel, normal, tilt };
+  let yaw = clamp(vx * 0.035, -0.35, 0.35);            // no ball to read: the face turns a little toward where the racket travels
+  let k = 1;                                           // touch (hand's small power adjustment)
+  if (ball) {
+    if (key.startsWith('serve') && racketPos) tilt = solveTiltServe(S, tilt, W, brush, through, vx, yaw, ball, racketPos);
+    else if (!key.startsWith('serve')) {
+      const aimX = clamp(vx * 0.15, -0.55, 0.55);      // swipe toward where you want the ball to go
+      const f = solveFaceRally(S, key, tilt, W, brush, through, vx, ball, racketPos, aimX);
+      tilt = f.tilt; yaw = f.yaw; k = f.k;
+    }
+  }
+  return { vel: swingVel(S, tilt, brush * k, through * k, vx * k), normal: faceNormal(tilt, yaw), tilt, yaw, touch: k };
 }

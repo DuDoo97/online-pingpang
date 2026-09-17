@@ -4,7 +4,8 @@ import { Ball, Racket, PARAMS, TABLE, BALL, simulateFlight, spinComponents, v3, 
 export const DIFFICULTY = {
   easy:   { reaction: 0.28, aimNoise: 0.22, moveSpeed: 2.2, power: 0.55, spin: 0.35, missChance: 0.10 },
   medium: { reaction: 0.18, aimNoise: 0.14, moveSpeed: 3.5, power: 0.75, spin: 0.7,  missChance: 0.04 },
-  hard:   { reaction: 0.10, aimNoise: 0.07, moveSpeed: 5.5, power: 1.0,  spin: 1.0,  missChance: 0.01 },
+  hard:   { reaction: 0.10, aimNoise: 0.07, moveSpeed: 5.5, power: 1.0,  spin: 1.0,  missChance: 0.01, placement: 0.6 },
+  pro:    { reaction: 0.07, aimNoise: 0.04, moveSpeed: 7.0, power: 1.15, spin: 1.2,  missChance: 0.004, placement: 1.0 },
 };
 
 // Playing styles: where the AI stands and which strokes it reaches for in each situation.
@@ -104,8 +105,12 @@ export class AIPlayer {
     const wantTop = lerpR(rec.spin, this.rng()) * (0.55 + 0.45 * cfg.spin);
     const speed = lerpR(rec.speed, this.rng()) * (0.7 + 0.3 * cfg.power);
 
-    // landing target on the player half
-    const tx = (this.rng() - 0.5) * (TABLE.width - 0.35) * (0.5 + 0.5 * cfg.power);
+    // landing target on the player half: random, or (skilled AI) away from where the player's racket is
+    let tx = (this.rng() - 0.5) * (TABLE.width - 0.35) * (0.5 + 0.5 * cfg.power);
+    if (cfg.placement && typeof this.playerX === 'number' && this.rng() < cfg.placement) {
+      const away = -Math.sign(this.playerX || (this.rng() - 0.5));
+      tx = away * (0.35 + this.rng() * 0.3);
+    }
     const tz = rec.shortTarget ? 0.2 + this.rng() * 0.35 : TABLE.length / 2 - 0.35 - this.rng() * 0.6;
     const target = v3(tx, TABLE.height, tz);
 

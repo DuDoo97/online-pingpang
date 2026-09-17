@@ -19,7 +19,8 @@
   #top { top: 0; left: 0; right: 0; display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 18px; gap: 16px; }
   #score { font-family: var(--display); font-weight: 700; font-size: 56px; line-height: 1; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; display: flex; gap: 12px; align-items: baseline; }
   #score .you { color: var(--you); } #score .ai { color: var(--ai); } #score .sep { color: var(--ink-dim); font-size: 36px; }
-  #rally { color: var(--ink-dim); margin-top: 4px; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+  #rallyRow { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+  #rally { color: var(--ink-dim); letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
   #right { text-align: right; }
   #shot { color: var(--ink); font-size: 13px; }
   #tilt { color: var(--ink-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
@@ -41,6 +42,24 @@
   #cheat td:first-child { white-space: nowrap; color: var(--ink); font-weight: 500; }
   #cheat .top { color: #ff8a5c; } #cheat .back { color: #8fd3ff; }
   #toggleCheat { position: fixed; left: 18px; top: 14px; transform: translateY(74px); font: inherit; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  #levelBadge { font: inherit; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); background: transparent; border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; cursor: pointer; pointer-events: auto; }
+  #levelBadge:hover { color: var(--ink); border-color: var(--ink-dim); }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .seg button { font: inherit; font-size: 12px; padding: 6px 4px; background: transparent; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { color: var(--ground); background: var(--ball); border-color: var(--ball); font-weight: 500; }
+  #levelModal { position: fixed; inset: 0; background: rgba(8, 10, 14, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; z-index: 10; }
+  #levelModal[hidden] { display: none; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 22px 24px 20px; max-width: 760px; width: 100%; }
+  .modal h2 { font-family: var(--display); font-weight: 700; font-size: 34px; letter-spacing: 0.02em; text-transform: uppercase; margin: 0 0 4px; line-height: 1; }
+  .modal p { color: var(--ink-dim); margin: 0 0 16px; font-size: 13px; max-width: 60ch; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .card { text-align: left; font: inherit; background: rgba(255,255,255,0.03); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 14px 14px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-height: 150px; }
+  .card:hover, .card:focus-visible { border-color: var(--ball); background: rgba(255, 179, 71, 0.06); }
+  .card .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--ink-dim); }
+  .card .t { font-family: var(--display); font-weight: 700; font-size: 24px; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1; }
+  .card .d { font-size: 12px; color: var(--ink-dim); line-height: 1.45; }
+  .card ul { margin: 2px 0 0; padding-left: 14px; font-size: 11px; color: var(--ink); line-height: 1.5; }
+  .modal .foot { margin-top: 14px; font-size: 11px; color: var(--ink-dim); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   #spinBadge { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 5px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; pointer-events: none; min-height: 14px; }
   #spinBadge:empty { display: none; }
   #spinBadge[data-kind="topspin"] { border-color: #ff7a59; } #spinBadge[data-kind="backspin"] { border-color: #8fd3ff; } #spinBadge[data-kind="sidespin"] { border-color: #c8ff8f; }
@@ -74,7 +93,7 @@
 <div id="top" class="hud">
   <div>
     <div id="score"><span class="you">0</span><span class="sep">·</span><span class="ai">0</span></div>
-    <div id="rally">rally 0 · best 0 · you serve</div>
+    <div id="rallyRow"><span id="rally">rally 0 · best 0 · you serve</span><button id="levelBadge" title="Change level (1–4)">casual</button></div>
   </div>
   <div id="right">
     <div id="shot">—</div>
@@ -90,7 +109,7 @@
 <div id="help">
   <b>mouse</b> racket · <b>swipe</b> at the ball = swing · <b>hold left</b> topspin · <b>hold right</b> backspin<br>
   <b>click / space</b> toss serve · <b>wheel / W S</b> step back or in · <b>H</b> stroke guide<br>
-  <b>R</b> restart · first to 11, win by 2
+  <b>1–4</b> level · <b>R</b> restart · first to 11, win by 2
 </div>
 
 <aside id="cheat">
@@ -128,8 +147,27 @@
 </aside>
 <button id="toggleCheat">stroke guide · H</button>
 
+<div id="levelModal">
+  <div class="modal" role="dialog" aria-labelledby="lvTitle">
+    <h2 id="lvTitle">Pick your level</h2>
+    <p>The ball physics is the same at every level. What changes is how much the game helps you land it, how big your racket is, and how the opponent plays. Change it any time with keys 1–4.</p>
+    <div class="cards">
+      <button class="card" data-level="newbie"><span class="k">1</span><span class="t">Newbie</span><span class="d">Never played, or never with a mouse.</span><ul><li>racket drifts to the ball</li><li>hits steered onto the table</li><li>slower ball, big racket</li><li>coach explains lost points</li></ul></button>
+      <button class="card" data-level="casual"><span class="k">2</span><span class="t">Casual</span><span class="d">Knows the rules, wants rallies.</span><ul><li>some landing help</li><li>slightly bigger racket</li><li>medium opponent</li><li>coach on</li></ul></button>
+      <button class="card" data-level="club"><span class="k">3</span><span class="t">Club</span><span class="d">Plays the real game. Wants to place the ball.</span><ul><li>little landing help</li><li>real racket size</li><li>hard opponent</li><li>coach on</li></ul></button>
+      <button class="card" data-level="pro"><span class="k">4</span><span class="t">Pro</span><span class="d">Raw physics. Power control is yours.</span><ul><li>no landing help</li><li>no hints, no coach</li><li>opponent hits away from you</li><li>swipe too hard = long</li></ul></button>
+    </div>
+    <div class="foot"><span>Your hand sets the racket face at every level. Power, timing and placement are the skill.</span><span>Press H in the game for the stroke guide.</span></div>
+  </div>
+</div>
+
 <aside id="side">
   <h2>Online Pingpang</h2>
+  <h3>Your level</h3>
+  <div class="seg" id="levelSeg">
+    <button data-level="newbie">Newbie</button><button data-level="casual" aria-pressed="true">Casual</button><button data-level="club">Club</button><button data-level="pro">Pro</button>
+  </div>
+  <p id="levelBlurb" style="color:var(--ink-dim);font-size:11px;line-height:1.5;margin:-4px 0 0"></p>
   <h3>You</h3>
   <label><span>Grip</span>
     <select id="grip"><option value="shakehand" selected>Shakehand</option><option value="penhold">Penhold (traditional)</option><option value="rpb">Penhold + RPB (reverse backhand)</option></select>
@@ -140,13 +178,15 @@
   </label>
   <h3>Opponent</h3>
   <label><span>Level</span>
-    <select id="level"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select>
+    <select id="level"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option><option value="pro">Pro: places the ball away from you</option></select>
   </label>
   <label><span>Style</span>
     <select id="style"><option value="attacker" selected>Attacker: loops, flicks, smashes</option><option value="controller">Controller: blocks, pushes, drives</option><option value="chopper">Chopper: stands back and chops</option></select>
   </label>
   <h3>Play</h3>
-  <label><span>Shot assist (0 = raw physics)</span><input type="range" id="assist" min="0" max="1" step="0.05" value="0.6"><output id="assistVal">60%</output></label>
+  <label><span>Landing help (0 = raw physics)</span><input type="range" id="assist" min="0" max="1" step="0.05" value="0.6"><output id="assistVal">60%</output></label>
+  <label><span>Racket drift toward the ball</span><input type="range" id="autoAim" min="0" max="1" step="0.05" value="0.35"><output id="autoAimVal">35%</output></label>
+  <label><span>Racket size</span><input type="range" id="racketScale" min="0.8" max="1.8" step="0.1" value="1.2"><output id="racketScaleVal">1.2×</output></label>
   <label><span>Camera</span>
     <select id="camsel"><option value="home" selected>Behind player</option><option value="side">Side</option><option value="top">Top</option></select>
   </label>

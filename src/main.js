@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Match } from './game.js';
 import { PARAMS, TABLE, BALL, spinComponents, simulateFlight, v3, len } from './physics.js';
 import { GRIPS, classify, synthesize, wingFor } from './strokes.js';
+import { LEVELS, LEVEL_ORDER } from './levels.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -112,12 +113,13 @@ predLine.frustumCulled = false; predLine.visible = false; scene.add(predLine);
 // ---------- rackets ----------
 function makeRacket(rubber) {
   const g = new THREE.Group();
+  const bladeGroup = new THREE.Group(); g.add(bladeGroup); g.blade = bladeGroup;
   const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.006, 40), new THREE.MeshStandardMaterial({ color: 0xc9a273, roughness: 0.8 }));
-  blade.rotation.x = Math.PI / 2; blade.castShadow = true; g.add(blade);
+  blade.rotation.x = Math.PI / 2; blade.castShadow = true; bladeGroup.add(blade);
   const r1 = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.004, 40), new THREE.MeshStandardMaterial({ color: rubber, roughness: 0.35 }));
-  r1.rotation.x = Math.PI / 2; r1.position.z = 0.005; g.add(r1);
+  r1.rotation.x = Math.PI / 2; r1.position.z = 0.005; bladeGroup.add(r1);
   const r2 = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.004, 40), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.35 }));
-  r2.rotation.x = Math.PI / 2; r2.position.z = -0.005; g.add(r2);
+  r2.rotation.x = Math.PI / 2; r2.position.z = -0.005; bladeGroup.add(r2);
   const handle = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.10, 0.02), new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 }));
   handle.position.y = -0.12; handle.castShadow = true;
   const handlePivot = new THREE.Group(); handlePivot.add(handle); g.add(handlePivot);
@@ -157,7 +159,10 @@ const ui = {
   slow: document.getElementById('slow'), cam: document.getElementById('camsel'), spinBadge: document.getElementById('spinBadge'),
   log: document.getElementById('log'), stroke: document.getElementById('stroke'), strokeHint: document.getElementById('strokeHint'),
   coach: document.getElementById('coach'), stance: document.getElementById('stance'), aiShot: document.getElementById('aiShot'),
-  cheat: document.getElementById('cheat'),
+  cheat: document.getElementById('cheat'), autoAim: document.getElementById('autoAim'), autoAimVal: document.getElementById('autoAimVal'),
+  racketScale: document.getElementById('racketScale'), racketScaleVal: document.getElementById('racketScaleVal'),
+  levelSeg: document.getElementById('levelSeg'), levelBlurb: document.getElementById('levelBlurb'), levelBadge: document.getElementById('levelBadge'),
+  levelModal: document.getElementById('levelModal'),
 };
 const logLines = [];
 function log(s) { logLines.push(s); if (logLines.length > 6) logLines.shift(); ui.log.textContent = logLines.join('\n'); }
@@ -176,7 +181,7 @@ const COACH = {
 let coachIx = 0;
 function coach(reason) {
   const lines = COACH[reason];
-  if (!lines) { ui.coach.textContent = ''; return; }
+  if (!lines || !settings.coach) { ui.coach.textContent = ''; return; }
   ui.coach.textContent = lines[coachIx++ % lines.length];
   clearTimeout(coach.timer); coach.timer = setTimeout(() => { ui.coach.textContent = ''; }, 6000);
 }
@@ -205,6 +210,42 @@ const match = new Match({
 match.assist = parseFloat(ui.assist.value);
 window.__match = match;   // for debugging / headless tests
 let lastPlayerStroke = null;
+
+// ---------- player level ----------
+const settings = { level: 'casual', autoAim: 0.35, coach: true, hints: true };
+let applyingLevel = false;
+function applyLevel(key, { remember = true } = {}) {
+  const L = LEVELS[key]; if (!L) return;
+  applyingLevel = true;
+  settings.level = key; settings.autoAim = L.autoAim; settings.coach = L.coach; settings.hints = L.hints;
+  match.assist = L.assist; match.racketScale = L.racketScale; match.timeScale = ui.slow.checked ? 0.35 : L.timeScale;
+  match.ai.setLevel(L.ai);
+  ui.assist.value = L.assist; ui.assistVal.textContent = Math.round(L.assist * 100) + '%';
+  ui.autoAim.value = L.autoAim; ui.autoAimVal.textContent = Math.round(L.autoAim * 100) + '%';
+  ui.racketScale.value = L.racketScale; ui.racketScaleVal.textContent = L.racketScale.toFixed(1) + '×';
+  ui.level.value = L.ai;
+  for (const b of ui.levelSeg.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.level === key));
+  ui.levelBlurb.textContent = L.blurb;
+  ui.levelBadge.textContent = L.label;
+  ui.coach.textContent = '';
+  if (remember) { try { localStorage.setItem('pingpang.level', key); } catch (e) { /* ignore */ } }
+  applyingLevel = false;
+}
+function customLevel() {
+  if (applyingLevel) return;
+  settings.level = 'custom';
+  for (const b of ui.levelSeg.querySelectorAll('button')) b.setAttribute('aria-pressed', 'false');
+  ui.levelBadge.textContent = 'custom';
+  ui.levelBlurb.textContent = 'Custom mix of the sliders below.';
+}
+for (const b of document.querySelectorAll('[data-level]')) b.addEventListener('click', () => { applyLevel(b.dataset.level); ui.levelModal.hidden = true; });
+ui.levelBadge.addEventListener('click', () => { ui.levelModal.hidden = false; });
+ui.levelModal.addEventListener('click', (e) => { if (e.target === ui.levelModal) ui.levelModal.hidden = true; });
+{
+  let saved = null; try { saved = localStorage.getItem('pingpang.level'); } catch (e) { /* ignore */ }
+  if (saved && LEVELS[saved]) { applyLevel(saved, { remember: false }); ui.levelModal.hidden = true; }
+  else applyLevel('casual', { remember: false });
+}
 
 // ---------- input: gesture + buttons + situation -> stroke -> racket swing ----------
 const raycaster = new THREE.Raycaster();
@@ -256,11 +297,13 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') setStance(stanceIx - 1);
   if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') setStance(stanceIx + 1);
   if (e.key === 'h' || e.key === 'H') ui.cheat.classList.toggle('open');
+  if (e.key >= '1' && e.key <= '4') { applyLevel(LEVEL_ORDER[Number(e.key) - 1]); ui.levelModal.hidden = true; }
+  if (e.key === 'Escape') ui.levelModal.hidden = true;
 });
 canvas.addEventListener('wheel', (e) => { setStance(stanceIx + Math.sign(e.deltaY)); }, { passive: true });
 
 // ---------- UI wiring ----------
-ui.level.addEventListener('change', () => match.ai.setLevel(ui.level.value));
+ui.level.addEventListener('change', () => { match.ai.setLevel(ui.level.value); customLevel(); });
 ui.style.addEventListener('change', () => match.ai.setStyle(ui.style.value));
 function applyGrip() {
   const g = GRIPS[ui.grip.value];
@@ -268,9 +311,10 @@ function applyGrip() {
   playerRacketMesh.handle.rotation.z = g.handleUp ? Math.PI : 0;
 }
 ui.grip.addEventListener('change', applyGrip); applyGrip();
-ui.assist.addEventListener('input', () => { match.assist = parseFloat(ui.assist.value); ui.assistVal.textContent = Math.round(match.assist * 100) + '%'; });
-ui.assistVal.textContent = Math.round(match.assist * 100) + '%';
-ui.slow.addEventListener('change', () => { match.timeScale = ui.slow.checked ? 0.35 : 1; });
+ui.assist.addEventListener('input', () => { match.assist = parseFloat(ui.assist.value); ui.assistVal.textContent = Math.round(match.assist * 100) + '%'; customLevel(); });
+ui.autoAim.addEventListener('input', () => { settings.autoAim = parseFloat(ui.autoAim.value); ui.autoAimVal.textContent = Math.round(settings.autoAim * 100) + '%'; customLevel(); });
+ui.racketScale.addEventListener('input', () => { match.racketScale = parseFloat(ui.racketScale.value); ui.racketScaleVal.textContent = match.racketScale.toFixed(1) + '×'; customLevel(); });
+ui.slow.addEventListener('change', () => { match.timeScale = ui.slow.checked ? 0.35 : (LEVELS[settings.level] ? LEVELS[settings.level].timeScale : 1); });
 ui.pred.addEventListener('change', () => { predLine.visible = ui.pred.checked; });
 
 // physics parameter panel
@@ -304,18 +348,18 @@ function resize() {
 }
 let last = performance.now();
 const camTarget = new THREE.Vector3(0, TABLE.height + 0.05, -0.4);
-let lastPred = 0;
+let lastPred = 0, lastSolve = 0, lastSolveKey = '', lastSw = null;
 
 // Where should the racket be in depth? Normally at the stance; for a ball that bounces short it steps in
 // over the table to meet the ball near the top of its bounce.
-let stepTarget = null, stepSituation = null, lastStepCalc = 0;
+let stepTarget = null, aimTarget = null, stepSituation = null, lastStepCalc = 0;
 function situation(now) {
   const b = match.ball, hand = ui.hand.value === 'left' ? -1 : 1;
   const stanceZ = TABLE.length / 2 + STANCES[stanceIx].depth;
   const serving = match.state === 'rally' && match.lastHitter === null;
   const receiving = match.shots === 1;
   const incoming = b.active && match.state === 'rally' && !serving && b.vel.z > 0 && match.lastHitter === 'ai';
-  if (!incoming) { stepTarget = null; stepSituation = { serving, receiving, short: false, high: false, far: stanceIx === 2, incomingTop: 0, wing: rs.wing }; return stepSituation; }
+  if (!incoming) { stepTarget = null; aimTarget = null; stepSituation = { serving, receiving, short: false, high: false, far: stanceIx === 2, incomingTop: 0, wing: rs.wing }; return stepSituation; }
   if (now - lastStepCalc < 50 && stepSituation) return stepSituation;
   lastStepCalc = now;
   // predict: first bounce on my side, then where the ball crosses my stance plane (or its apex if it never gets there)
@@ -323,7 +367,7 @@ function situation(now) {
   const r = simulateFlight(b, PARAMS, { maxTime: 2, dt: 1 / 120, stop: (bb, t, ev) => {
     for (const e of ev) if (e.type === 'bounce' && e.side === 'player' && !bounce) bounce = { pos: e.pos, t };
     if (bounce && !apex && bb.vel.y <= 0) apex = { pos: { ...bb.pos }, t };
-    return bb.pos.z >= stanceZ - 0.05 || (apex && bb.pos.y < TABLE.height) || ev.some(e => e.type === 'floor' || e.type === 'net');
+    return (bb.pos.z >= stanceZ - 0.05 && (!bounce || bb.vel.y <= 0 || bb.pos.y > TABLE.height + 0.14)) || (apex && bb.pos.y < TABLE.height - 0.05) || ev.some(e => e.type === 'floor' || e.type === 'net');
   } });
   const reaches = r.ball.pos.z >= stanceZ - 0.06;
   const short = !!bounce && bounce.pos.z < 0.75 && !reaches;
@@ -331,6 +375,7 @@ function situation(now) {
   const inTop = spinComponents(b.vel, b.spin).top;
   stepTarget = short && apex ? { z: Math.max(0.15, apex.pos.z + 0.10), y: apex.pos.y } : null;
   const wingX = reaches ? r.ball.pos.x : (apex ? apex.pos.x : b.pos.x);
+  aimTarget = reaches ? { x: r.ball.pos.x, y: r.ball.pos.y, t: r.t } : (apex ? { x: apex.pos.x, y: apex.pos.y, t: apex.t } : null);
   rs.wing = wingFor(wingX, hand, rs.wing);
   stepSituation = { serving, receiving, short, high, far: stanceIx === 2 && !short, incomingTop: inTop, wing: rs.wing };
   return stepSituation;
@@ -352,7 +397,13 @@ function frame(now) {
   // cursor velocity (smoothed) = the gesture. Any decisive cursor motion is a swing AT the ball: its size is the
   // power, its sideways part is sidespin, and the held button decides the family (topspin / backspin / flat).
   const k = 1 - Math.exp(-dt * 30);
-  const nx = rs.pos.x + (rs.cursor.x - rs.pos.x) * k, ny = rs.pos.y + (rs.cursor.y - rs.pos.y) * k;
+  // racket drift (Newbie/Casual): the hand eases toward where the ball will be, more strongly as it gets close
+  let cx = rs.cursor.x, cy = rs.cursor.y;
+  if (settings.autoAim > 0 && aimTarget && aimTarget.t < 0.9) {
+    const w = settings.autoAim * (1 - aimTarget.t / 0.9);
+    cx = cx + (aimTarget.x - cx) * w; cy = cy + (aimTarget.y - 0.02 - cy) * w;
+  }
+  const nx = rs.pos.x + (cx - rs.pos.x) * k, ny = rs.pos.y + (cy - rs.pos.y) * k;
   const raw = v3((nx - rs.pos.x) / dt, (ny - rs.pos.y) / dt, 0);
   const a = 1 - Math.exp(-dt * 16);
   rs.cursorVel = v3(rs.cursorVel.x + (raw.x - rs.cursorVel.x) * a, rs.cursorVel.y + (raw.y - rs.cursorVel.y) * a, 0);
@@ -363,17 +414,34 @@ function frame(now) {
   const goalZ = (stepTarget ? stepTarget.z : stanceZ) - lunge;
   const kz = 1 - Math.exp(-dt * (goalZ < rs.pos.z ? 32 : 9));
   rs.pos = v3(nx, ny, rs.pos.z + (goalZ - rs.pos.z) * kz);
-  rs.gesture = { speed, vx: rs.cursorVel.x * hand, fwd, button: rs.button };
+  rs.gesture = { speed, vx: rs.cursorVel.x, fwd, button: rs.button };   // world frame: swipe right = aim/spin right
   // wing: which side of the body the hand is on (serving: forehand)
   if (!match.ball.active || match.lastHitter !== 'ai') rs.wing = wingFor(rs.pos.x, hand, rs.wing);
   const cls = classify({ button: rs.button, speed, vx: rs.gesture.vx, fwd, ctx, grip, wing: rs.wing });
   rs.stroke = cls;
-  const sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx);
-  // racket velocity for the physics: synthesized swing, mirrored for left-handers in x, plus the actual body motion in z
-  rs.vel = v3(sw.vel.x * hand, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dt * 0.5);
-  rs.normal = v3(sw.normal.x * hand, sw.normal.y, sw.normal.z);
+  // The hand solves the face angle against the real incoming ball. It is a flight search, so run it at ~20 Hz
+  // (and only when a ball is live); in between, keep the last solved swing scaled to the current gesture.
+  const ball0 = match.ball, live = ball0.active && match.state === 'rally';
+  const solveKey = cls.key + '|' + rs.wing + '|' + rs.button + '|' + Math.round(speed * 4);
+  let sw;
+  if (live && (now - lastSolve > 50 || solveKey !== lastSolveKey)) {
+    lastSolve = now; lastSolveKey = solveKey;
+    sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ball0, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z });
+    lastSw = sw;
+  } else if (live && lastSw) sw = lastSw;
+  else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx);
+  // racket velocity for the physics: the synthesized swing plus the actual body motion in depth
+  rs.vel = v3(sw.vel.x, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dt * 0.5);
+  rs.normal = v3(sw.normal.x, sw.normal.y, sw.normal.z);
 
-  match.update(dt, { prev: rs.prev, pos: rs.pos, vel: rs.vel, normal: rs.normal, stroke: { key: cls.key, label: cls.label } });
+  // At the instant of contact the hand re-solves the face against the ball as it actually is (the frame's solve
+  // can be up to 50 ms stale, which at 6 m/s is 30 cm of ball travel).
+  const bodyVz = (rs.pos.z - rs.prev.z) / dt * 0.5;
+  const refine = (ballNow) => {
+    const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z });
+    return { normal: s2.normal, vel: v3(s2.vel.x, s2.vel.y, s2.vel.z + bodyVz) };
+  };
+  match.update(dt, { prev: rs.prev, pos: rs.pos, vel: rs.vel, normal: rs.normal, stroke: { key: cls.key, label: cls.label }, refine });
 
   // --- visuals ---
   const b = match.ball;
@@ -406,6 +474,7 @@ function frame(now) {
 
   // racket meshes: the player's shows the black face on backhand for flipping grips
   const flip = (GRIPS[grip][rs.wing] || GRIPS[grip].fh).flip;
+  playerRacketMesh.blade.scale.setScalar(match.racketScale);
   orientRacket(playerRacketMesh, match.player.pos, match.player.normal, flip);
   orientRacket(aiRacketMesh, match.ai.racket.pos, match.ai.racket.normal, false);
 
@@ -430,7 +499,7 @@ function frame(now) {
   ui.stroke.textContent = recent ? lastPlayerStroke.label : cls.label;
   ui.stroke.dataset.family = rs.button === 'L' ? 'top' : rs.button === 'R' ? 'back' : 'flat';
   ui.stroke.classList.toggle('hit', !!recent);
-  ui.strokeHint.textContent = recent ? '' : cls.hint;
+  ui.strokeHint.textContent = recent || !settings.hints ? '' : cls.hint;
 
   renderer.render(scene, camera);
 }

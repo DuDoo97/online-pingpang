@@ -190,9 +190,27 @@ export function stepBall(ball, dt, P = PARAMS, events = []) {
   return events;
 }
 
+// Apply a rubber impact to `ball` (mutates it). n = unit normal from the rubber toward the ball.
+export function racketImpact(ball, n, racketVel, P = PARAMS) {
+  const vrel = sub(ball.vel, racketVel);
+  const vn = Math.abs(dot(vrel, n));
+  const vt = len(sub(vrel, scale(n, dot(vrel, n))));
+  const e = Math.max(0.4, P.racketCOR - P.racketCORSlope * vn);
+  const et = Math.max(0, P.racketTangentialCOR - P.racketTangentialSlope * vt);
+  return impactBall(ball, n, racketVel, e, P.racketFriction, et);
+}
+// Preview of a rubber impact: returns the outgoing {vel, spin} without touching the ball, or null if separating.
+export function previewRacketImpact(vel, spin, n, racketVel, P = PARAMS) {
+  const b = new Ball(); b.vel = copy(vel); b.spin = copy(spin);
+  const res = racketImpact(b, n, racketVel, P);
+  return res ? { vel: b.vel, spin: b.spin } : null;
+}
+
 // ---------- ball vs racket (swept disc test) ----------
 // racket.prevPos / racket.pos bracket the racket motion during this step, prevBallPos / ball.pos the ball's.
-export function collideRacket(ball, prevBallPos, racket, P = PARAMS) {
+// refine (optional): called with the ball in its pre-impact state at the contact point; returns { normal, vel } for
+// the racket at that instant (a hand's last-moment adjustment) or null to keep the racket's current face.
+export function collideRacket(ball, prevBallPos, racket, P = PARAMS, refine = null) {
   const r = BALL.radius;
   const half = r + racket.thickness / 2;
   const d0 = dot(sub(prevBallPos, racket.prevPos), racket.normal);
@@ -208,12 +226,18 @@ export function collideRacket(ball, prevBallPos, racket, P = PARAMS) {
   const inplane = sub(rel, scale(racket.normal, dot(rel, racket.normal)));
   if (len(inplane) > racket.radius + r) return null;   // missed the blade (rim contact still counts)
   ball.pos = add(racket.pos, add(inplane, scale(n, half + 1e-4)));
-  const vrel = sub(ball.vel, racket.vel);
-  const vn = Math.abs(dot(vrel, n));
-  const vt = len(sub(vrel, scale(n, dot(vrel, n))));
-  const e = Math.max(0.4, P.racketCOR - P.racketCORSlope * vn);
-  const et = Math.max(0, P.racketTangentialCOR - P.racketTangentialSlope * vt);
-  const res = impactBall(ball, n, racket.vel, e, P.racketFriction, et);
+  let nImpact = n, vImpact = racket.vel;
+  if (refine) {
+    const r = refine(ball);
+    if (r && r.normal) {
+      const nr = norm(r.normal);
+      const side2 = dot(sub(prevBallPos, racket.prevPos), nr) >= 0 ? 1 : -1;
+      nImpact = scale(nr, side2);
+      if (r.vel) vImpact = r.vel;
+      racket.normal = nr;
+    }
+  }
+  const res = racketImpact(ball, nImpact, vImpact, P);
   if (!res) return null;
   return { type: 'racket', pos: copy(ball.pos), speed: len(ball.vel), spin: len(ball.spin), racketSpeed: len(racket.vel), slid: res.slid };
 }
