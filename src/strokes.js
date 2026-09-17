@@ -103,19 +103,41 @@ function faceScore(o, targetZ, aimX) {
 // stroke's natural depth, aimed at `aimX`. The feasible faces form a narrow tilt×yaw pocket, so the coarse search
 // is a joint grid. If no face lands at the player's power, the hand may adjust its touch a little (×0.7..×1.7):
 // firmer against a dead ball, softer against a fast one. Gross power errors still miss.
-function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, aimX) {
+// `band` (optional {target, half}) pins the face near a player-chosen angle: the search still looks for the face
+// that lands the ball, but only within +/- half of the target, so the player's tilt survives contact.
+function solveFaceRally(S, key, base, W, brush, through, vx, ball, racketPos, aimX, band = null) {
   const targetZ = DEPTH[key] ?? -0.9;
+  // PINNED FACE (the player chose an angle): hold the tilt exactly and search the swing instead, so the angle the
+  // player asked for is what meets the ball. A chop face gives a chop; if it cannot land, it misses, as in life.
+  if (band) {
+    const tilt = clamp(band.target, W.minTilt, W.maxTilt);
+    const from0 = racketPos ? { x: racketPos.x, y: racketPos.y, z: racketPos.z - 0.03 } : { x: ball.pos.x, y: ball.pos.y, z: ball.pos.z };
+    let best = { tilt, yaw: 0, k: 1, score: Infinity };
+    for (const k of [1, 0.85, 1.2, 0.7, 1.4, 0.55, 1.7, 0.4, 2.0]) {
+      for (const yaw of [0, -0.2, 0.2, -0.4, 0.4, -0.6, 0.6]) {
+        const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k));
+        if (!out) continue;
+        const sc = faceScore(flightOutcome(out, from0), targetZ, aimX) + Math.abs(yaw) * 0.02 + Math.abs(k - 1) * 0.3;
+        if (sc < best.score) best = { tilt, yaw, k, score: sc };
+      }
+    }
+    return best;
+  }
   const from = racketPos ? { x: racketPos.x, y: racketPos.y, z: racketPos.z - 0.03 } : { x: ball.pos.x, y: ball.pos.y, z: ball.pos.z };
   const evalFace = (tilt, yaw, k) => {
     const out = previewRacketImpact(ball.vel, ball.spin, faceNormal(tilt, yaw), swingVel(S, tilt, brush * k, through * k, vx * k));
     return out ? faceScore(flightOutcome(out, from), targetZ, aimX) + Math.abs(tilt - base) * 0.002 + Math.abs(yaw) * 0.02 + Math.abs(k - 1) * 0.3 : 6;
   };
-  let best = { tilt: base, yaw: 0, k: 1, score: Infinity };
-  const tryFace = (tilt, yaw, k) => { if (tilt < W.minTilt || tilt > W.maxTilt) return; const sc = evalFace(tilt, yaw, k); if (sc < best.score) best = { tilt, yaw, k, score: sc }; };
-  for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 6) for (const yaw of [-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6]) tryFace(tilt, yaw, 1);
+  // With a band, the base of the search is the player's angle and the tilt wander is capped.
+  const lo = band ? Math.max(W.minTilt, band.target - band.half) : W.minTilt;
+  const hi = band ? Math.min(W.maxTilt, band.target + band.half) : W.maxTilt;
+  const baseTilt = band ? clamp(band.target, W.minTilt, W.maxTilt) : base;
+  let best = { tilt: baseTilt, yaw: 0, k: 1, score: Infinity };
+  const tryFace = (tilt, yaw, k) => { if (tilt < lo || tilt > hi) return; const sc = evalFace(tilt, yaw, k); if (sc < best.score) best = { tilt, yaw, k, score: sc }; };
+  for (let tilt = lo; tilt <= hi; tilt += 6) for (const yaw of [-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6]) tryFace(tilt, yaw, 1);
   if (best.score >= 2) {
     for (const k of [1.35, 0.7, 1.7]) {
-      for (let tilt = W.minTilt; tilt <= W.maxTilt; tilt += 6) for (const yaw of [-0.4, -0.2, 0, 0.2, 0.4]) tryFace(tilt, yaw, k);
+      for (let tilt = lo; tilt <= hi; tilt += 6) for (const yaw of [-0.4, -0.2, 0, 0.2, 0.4]) tryFace(tilt, yaw, k);
       if (best.score < 2) break;
     }
   }
@@ -144,6 +166,22 @@ function solveTiltServe(S, base, W, brush, through, vx, yaw, ball, racketPos) {
     if (score < bestScore) { bestScore = score; best = tilt; }
   }
   return best;
+}
+
+// The player's tilt request, as an angle in degrees, from a signed bias:
+//   bias < 0  -> open face (chop, heavy backspin)
+//   bias = 0  -> the stroke's own angle, solved by the hand as before
+//   bias > 0  -> closed face (smash, loop, topspin)
+// The bias is clamped to what the wing allows, so a penhold backhand cannot close as far as a shakehand one.
+export const TILT_RANGE = { closed: -45, open: 50 };   // degrees at full close / full open
+// bias: +1 = fully closed face (smash, loop), -1 = fully open (chop), 0 = the stroke's own angle.
+export function faceAngleFor(bias, grip = 'shakehand', wing = 'fh', nominal = 0) {
+  const G = GRIPS[grip] || GRIPS.shakehand; const W = G[wing] || G.fh;
+  const closedLimit = Math.max(W.minTilt, TILT_RANGE.closed);
+  const openLimit = Math.min(W.maxTilt, TILT_RANGE.open);
+  const limit = bias >= 0 ? closedLimit : openLimit;     // +bias walks toward closed, -bias toward open
+  const target = nominal + Math.abs(bias) * (limit - nominal);
+  return Math.max(closedLimit, Math.min(openLimit, target));
 }
 
 export function wingTag(grip, wing) {
@@ -210,7 +248,7 @@ export function familyFromSwipe(vx, vy) {
 // Turn the gesture into the racket's velocity and face normal (player faces −z).
 // vel = brush along the face tangent + through toward the net + lateral. When `ball` (the incoming ball) and
 // `racketPos` are given, the hand solves the face tilt for the stroke's natural launch angle.
-export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}, ball = null, racketPos = null) {
+export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = {}, grip = 'shakehand', wing = 'fh', ctx = {}, ball = null, racketPos = null, tiltBias = 0) {
   const S = STROKES[key] || STROKES.flat; const G = GRIPS[grip] || GRIPS.shakehand; const W = G[wing] || G.fh;
   let tilt = S.tilt;
   const inTop = ctx.incomingTop || 0;
@@ -223,13 +261,19 @@ export function synthesize(key, { speed = 0, vx = 0, fwd = 0, button = null } = 
   const through = (S.through * Math.max(0, fwd) + (moving ? S.base : 0)) * W.speed;
   let yaw = clamp(vx * 0.035, -0.35, 0.35);            // no ball to read: the face turns a little toward where the racket travels
   let k = 1;                                           // touch (hand's small power adjustment)
+  // A player-chosen face angle: the hand still solves where to put the ball, but inside a band around it, so the
+  // tilt the player asked for survives contact. Without a band the solver would simply overwrite the angle.
+  const band = tiltBias !== 0
+    ? { target: faceAngleFor(tiltBias, grip, wing, tilt), half: Math.min(34, 12 + 22 * Math.abs(tiltBias)) }
+    : null;
+  if (band) tilt = band.target;
   if (ball) {
     if (key.startsWith('serve') && racketPos) tilt = solveTiltServe(S, tilt, W, brush, through, vx, yaw, ball, racketPos);
     else if (!key.startsWith('serve')) {
       const aimX = clamp(vx * 0.15, -0.55, 0.55);      // swipe toward where you want the ball to go
-      const f = solveFaceRally(S, key, tilt, W, brush, through, vx, ball, racketPos, aimX);
+      const f = solveFaceRally(S, key, tilt, W, brush, through, vx, ball, racketPos, aimX, band);
       tilt = f.tilt; yaw = f.yaw; k = f.k;
     }
   }
-  return { vel: swingVel(S, tilt, brush * k, through * k, vx * k), normal: faceNormal(tilt, yaw), tilt, yaw, touch: k };
+  return { vel: swingVel(S, tilt, brush * k, through * k, vx * k), normal: faceNormal(tilt, yaw), tilt, yaw, touch: k, banded: !!band };
 }
