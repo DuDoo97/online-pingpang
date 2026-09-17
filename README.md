@@ -1,9 +1,11 @@
 # Online Pingpang
 
+**Play:** https://dudoo97.github.io/online-pingpang/ · **Research dossier:** https://dudoo97.github.io/online-pingpang/docs/dossier.html
+
 A browser 3D table-tennis demo with a physically grounded ball: drag, Magnus lift, spin-coupled bounces, speed-dependent
 restitution, grippy rubber. Play against an AI that predicts the ball with the *same* physics and solves its return shots.
 
-## Run
+## Run locally
 
 ```bash
 npm install
@@ -11,6 +13,8 @@ npm run dev        # http://localhost:8173
 npm test           # headless physics + stroke checks
 npm run single     # dist/pingpang.html — one self-contained file you can double-click
 ```
+
+Deploys: every push to `main` runs the tests, builds, and publishes to GitHub Pages via `.github/workflows/pages.yml`.
 
 ## Controls: the stroke grammar
 
