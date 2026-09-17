@@ -128,6 +128,8 @@ function makeRacket(rubber) {
   return g;
 }
 const playerRacketMesh = makeRacket(0xc0272d); scene.add(playerRacketMesh);
+const playerRubberMats = [];
+playerRacketMesh.blade.traverse((o) => { if (o.material && o.material.color) playerRubberMats.push(o.material); });
 const aiRacketMesh = makeRacket(0xc0272d); scene.add(aiRacketMesh);
 const up = new THREE.Vector3(0, 1, 0), tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tmpV = new THREE.Vector3();
 function orientRacket(mesh, pos, normal, flip = false) {
@@ -161,6 +163,7 @@ const ui = {
   log: document.getElementById('log'), stroke: document.getElementById('stroke'), strokeHint: document.getElementById('strokeHint'),
   coach: document.getElementById('coach'), stance: document.getElementById('stance'), aiShot: document.getElementById('aiShot'),
   cheat: document.getElementById('cheat'), autoAim: document.getElementById('autoAim'), autoAimVal: document.getElementById('autoAimVal'),
+  face: document.getElementById('face'),
   racketScale: document.getElementById('racketScale'), racketScaleVal: document.getElementById('racketScaleVal'),
   levelSeg: document.getElementById('levelSeg'), levelBlurb: document.getElementById('levelBlurb'), levelBadge: document.getElementById('levelBadge'),
   levelModal: document.getElementById('levelModal'),
@@ -269,6 +272,10 @@ function setStance(ix) {
 }
 setStance(0);
 
+// The racket face the player is asking for: 0 = leave it to the hand (the default), +1 = fully closed (smash or
+// loop), -1 = fully open (chop or heavy backspin). Set by a press-and-hold drag on a phone, by Shift+drag or the
+// arrow keys on a desktop, and shown on the HUD so it is never a hidden state.
+const face = { bias: 0, target: 0, shown: 0 };
 const rs = {
   pos: v3(0, TABLE.height + 0.25, TABLE.length / 2 + 0.30), prev: v3(0, TABLE.height + 0.25, TABLE.length / 2 + 0.30),
   cursor: v3(0, TABLE.height + 0.25, TABLE.length / 2 + 0.30),   // where the mouse says the hand is (x, y)
@@ -292,16 +299,28 @@ let inputKind = isTouchDevice() ? 'touch' : 'mouse';   // the stroke family come
 canvas.addEventListener('pointermove', (ev) => {
   if (ev.pointerType && ev.pointerType !== 'mouse') return;      // fingers are handled by TouchControls
   inputKind = 'mouse';
+  if (faceDragging) {
+    // Shift+drag: vertical movement sets the face angle instead of moving the racket
+    const dy = ev.clientY - faceDragging.y0;
+    const span = Math.max(120, canvas.clientHeight * 0.34);
+    face.bias = Math.max(-1, Math.min(1, -dy / span * 2));
+    return;
+  }
   setCursorFromScreen(ev.clientX, ev.clientY);
 });
+let faceDragging = null;
 canvas.addEventListener('pointerdown', (ev) => {
   if (ev.pointerType && ev.pointerType !== 'mouse') return;
   inputKind = 'mouse';
+  if (ev.shiftKey && ev.button === 0) { faceDragging = { y0: ev.clientY, start: face.bias }; return; }
   if (ev.button === 0) rs.button = 'L'; else if (ev.button === 2) rs.button = 'R';
   if (match.restartIfOver()) return;
   if (ev.button === 0 || ev.button === 2) match.toss();
 });
-window.addEventListener('pointerup', (ev) => { if ((ev.button === 0 && rs.button === 'L') || (ev.button === 2 && rs.button === 'R')) rs.button = null; });
+window.addEventListener('pointerup', (ev) => {
+  if (((ev.button === 0 && rs.button === 'L') || (ev.button === 2 && rs.button === 'R'))) rs.button = null;
+  if (faceDragging) faceDragging = null;
+});
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); if (!match.restartIfOver()) match.toss(); }
@@ -309,6 +328,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') setStance(stanceIx - 1);
   if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') setStance(stanceIx + 1);
   if (e.key === 'h' || e.key === 'H') ui.cheat.classList.toggle('open');
+  // Face angle without a mouse: hold a direction key to walk the face open or closed, or tap 0 to hand it back.
+  if (e.key === ']' || e.key === '}') face.bias = Math.min(1, face.bias + 0.25);
+  if (e.key === '[' || e.key === '{') face.bias = Math.max(-1, face.bias - 0.25);
+  if (e.key === '0') face.bias = 0;
   if (e.key >= '1' && e.key <= '4') { applyLevel(LEVEL_ORDER[Number(e.key) - 1]); ui.levelModal.hidden = true; }
   if (e.key === 'Escape') ui.levelModal.hidden = true;
 });
@@ -318,6 +341,7 @@ canvas.addEventListener('wheel', (e) => { setStance(stanceIx + Math.sign(e.delta
 const touch = new TouchControls(canvas, {
   onTap: () => { if (!match.restartIfOver()) match.toss(); },
   onStance: (dir) => setStance(stanceIx + dir),
+  onTilt: (v) => { face.bias = v; },
 });
 touch.onCursor = (x, y) => { inputKind = 'touch'; setCursorFromScreen(x, y); };
 touch.liftPx = Math.min(120, (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.18);
@@ -389,6 +413,8 @@ function maybeShowTouchHint() {
   });
 }
 document.getElementById('toggleCheat').addEventListener('click', () => ui.cheat.classList.toggle('open'));
+// Tapping the face readout hands the angle back to the hand: the way out of a face the player set by accident.
+ui.face.addEventListener('click', () => { face.bias = 0; });
 
 // ---------- loop ----------
 function resize() {
@@ -448,6 +474,9 @@ function frame(now) {
   const ctx = situation(now);
   const hand = ui.hand.value === 'left' ? -1 : 1;
   const grip = ui.grip.value;
+  if (inputKind === 'touch') touch.updateHold(dtGame);
+  // A finger that has just been released keeps the last face so the next stroke can repeat it; a tap resets nothing.
+  face.shown += (face.bias - face.shown) * (1 - Math.exp(-dtGame * 12));
 
   // --- hand position: x/y from the cursor (light spring), z from the stance or the step-in target ---
   rs.prev = { ...rs.pos };
@@ -490,10 +519,10 @@ function frame(now) {
   let sw;
   if (live && (now - lastSolve > 50 || solveKey !== lastSolveKey)) {
     lastSolve = now; lastSolveKey = solveKey;
-    sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ball0, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z });
+    sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ball0, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias);
     lastSw = sw;
   } else if (live && lastSw) sw = lastSw;
-  else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx);
+  else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, null, null, face.bias);
   // racket velocity for the physics: the synthesized swing plus the actual body motion in depth
   rs.vel = v3(sw.vel.x, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dtGame * 0.5);
   rs.normal = v3(sw.normal.x, sw.normal.y, sw.normal.z);
@@ -502,7 +531,7 @@ function frame(now) {
   // can be up to 50 ms stale, which at 6 m/s is 30 cm of ball travel).
   const bodyVz = (rs.pos.z - rs.prev.z) / dtGame * 0.5;
   const refine = (ballNow) => {
-    const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z });
+    const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z }, face.bias);
     return { normal: s2.normal, vel: v3(s2.vel.x, s2.vel.y, s2.vel.z + bodyVz) };
   };
   match.update(dt, { prev: rs.prev, pos: rs.pos, vel: rs.vel, normal: rs.normal, stroke: { key: cls.key, label: cls.label }, refine });
@@ -537,8 +566,15 @@ function frame(now) {
   } else { trailCount = 0; trailGeo.setDrawRange(0, 0); ui.spinBadge.textContent = ''; predGeo.setDrawRange(0, 0); }
 
   // racket meshes: the player's shows the black face on backhand for flipping grips
-  const flip = (GRIPS[grip][rs.wing] || GRIPS[grip].fh).flip;
+  // Which face meets the ball should be visible: the red face for a closed (attacking) face, the black for an
+  // open (chopping) one. The stroke's own tilt decides when the player has not asked for a specific angle.
+  const tiltNow = sw.tilt ?? 0;
+  const flipBase = (GRIPS[grip][rs.wing] || GRIPS[grip].fh).flip;
+  const flip = (tiltNow > 12 ? true : tiltNow < -12 ? false : flipBase);
   playerRacketMesh.blade.scale.setScalar(match.racketScale);
+  // A held finger is in face-setting mode: glow the racket so the state is never invisible.
+  const held = inputKind === 'touch' && touch.tiltHeld;
+  for (const m of playerRubberMats) m.emissive?.setHex(held ? 0x552200 : 0x000000);
   orientRacket(playerRacketMesh, match.player.pos, match.player.normal, flip);
   orientRacket(aiRacketMesh, match.ai.racket.pos, match.ai.racket.normal, false);
 
@@ -565,6 +601,13 @@ function frame(now) {
   ui.stroke.dataset.family = rs.button === 'L' ? 'top' : rs.button === 'R' ? 'back' : 'flat';
   ui.stroke.classList.toggle('hit', !!recent);
   ui.strokeHint.textContent = recent || !settings.hints ? '' : cls.hint;
+  {
+    const deg = Math.round(sw.tilt ?? 0);
+    const fam = sw.banded ? (face.shown > 0.15 ? 'closed' : face.shown < -0.15 ? 'open' : 'neutral') : 'auto';
+    ui.face.textContent = `face ${deg > 0 ? '+' : ''}${deg}° ${fam}`;
+    ui.face.dataset.mode = sw.banded ? (face.shown > 0.15 ? 'closed' : face.shown < -0.15 ? 'open' : 'neutral') : 'auto';
+    ui.face.style.opacity = face.bias !== 0 || touch.tiltHeld ? '1' : '0.45';
+  }
 
   renderer.render(scene, camera);
 }

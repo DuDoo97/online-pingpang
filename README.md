@@ -68,6 +68,7 @@ stick or button bar: the finger replaces the mouse directly.
 | **Hold still** | Block, or a short push — the safe shots |
 | **Tap** | Toss the serve |
 | **Two fingers up / down** | Step in or step back (the stance: close to the table unlocks flicks and blocks, far back unlocks chops and lobs) |
+| **Press, hold still, then drag up / down** | Set the racket face: up closes it (smash, loop), down opens it (chop, heavy push) |
 
 Why the swipe direction carries the stroke family: on the desktop the held mouse button picks between topspin and
 backspin, which a phone does not have. A swipe direction is the one gesture every phone player already knows, it is
@@ -76,6 +77,37 @@ exactly as the mouse measures cursor speed, so the same stroke table and the sam
 
 The app asks for landscape (the table is wide), offers fullscreen with a landscape orientation lock where the
 browser allows it, and stays playable in portrait with a wider lens and the camera pulled back.
+
+## Racket face angle: chop or smash on purpose
+
+The swipe chooses the stroke family and its speed sets the power, but the *face angle* is what decides how much spin
+the ball leaves with. That is now yours to set:
+
+| | |
+|---|---|
+| **Phone** | Press and hold still for a moment (the racket glows), then drag **up to close** the face or **down to open** it. Release to play the shot. |
+| **Desktop** | **Shift+drag** vertically, or **`[`** / **`]`** to walk the angle, or **`0`** to hand it back. |
+| **Readout** | `FACE +50° OPEN` under the stroke name, coloured blue when open and orange when closed. Tap it to reset. |
+
+An open face is a chop or a heavy backspin push. A closed face is a smash or a loop. The contact face is visible on
+the racket itself: the red rubber for a closed face, the black for an open one.
+
+What the physics does with it, measured from the demo's own engine on an ordinary rally ball:
+
+| Face | Stroke | Spin off the racket |
+|---|---|---|
+| +50° (open) | chop | 6,297 rpm backspin |
+| +18° (slightly open) | drive | 450 rpm, floating |
+| −20° (closed) | loop | 4,706 rpm topspin |
+| −45° (shut) | drive | 4,228 rpm topspin |
+| +50° (open) | loop | 1,470 rpm, the loop's spin killed |
+
+That last row is the point of the control: the same loop swing becomes a spinless floater if you open the face, and a
+drag-and-flat smash if you shut it.
+
+**How it interacts with the hand.** Normally the hand solves the face angle for you, so the ball lands. When you set
+an angle, the hand stops solving the face and solves the *swing* instead, holding your angle exactly. So your chop
+stays a chop; if that face cannot land the ball, it misses, exactly as it would in life. No face angle is a free win.
 
 ## Controls: the stroke grammar
 

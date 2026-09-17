@@ -18,10 +18,13 @@
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export class TouchControls {
-  constructor(canvas, { onTap = () => {}, onStance = () => {}, onTwoFinger = null } = {}) {
+  constructor(canvas, { onTap = () => {}, onStance = () => {}, onTilt = () => {} } = {}) {
     this.canvas = canvas;
     this.onTap = onTap;
     this.onStance = onStance;
+    this.onTilt = onTilt;
+    this.tilt = 0;                 // -1 open (chop) .. +1 closed (smash), from a press-and-hold drag
+    this.tiltHeld = false;
     this.pointers = new Map();
     this.primary = null;          // id of the finger that plays
     this.velocity = { x: 0, y: 0 };// normalised screen units per second (dx, dy after the lift offset)
@@ -53,6 +56,8 @@ export class TouchControls {
         this.active = true; this.used = true;
         this._last = { x: p.x, y: p.y, t: performance.now() };
         this._tap = { x: p.x, y: p.y, t: performance.now(), moved: 0 };
+        this._holdOrigin = { x: p.x, y: p.y };
+        this.holdTime = 0; this.tiltHeld = false;
         this.onCursor?.(p.x, p.y);
       } else if (this.pointers.size === 2) {
         // a second finger: start a two-finger vertical swipe (step back / step in)
@@ -103,11 +108,31 @@ export class TouchControls {
         this.active = false;
         this.velocity.x = 0; this.velocity.y = 0;
         this._last = null;
+        this.tiltHeld = false; this.holdTime = 0;
       }
       ev.preventDefault();
     };
     c.addEventListener('pointerup', end, { passive: false });
     c.addEventListener('pointercancel', end, { passive: false });
+  }
+
+  // Press-and-hold then drag vertically to set the racket face: holding still is already the "block / no swing"
+  // gesture, so the finger has nothing else to do, and the drag's height maps to the face from open to closed.
+  // A quick swipe never triggers it (the finger does not stay still), so the normal swing is untouched.
+  updateHold(dt, stillFor = 0.22) {
+    const first = [...this.pointers.values()][0];
+    if (!first || this.pointers.size !== 1 || !this._last) { this.tiltHeld = false; this.holdTime = 0; return; }
+    const moved = Math.hypot(this._last.x - this._holdOrigin.x, this._last.y - this._holdOrigin.y);
+    if (!this.tiltHeld) {
+      if (moved < 10) { this.holdTime = (this.holdTime || 0) + dt; if (this.holdTime > stillFor) { this.tiltHeld = true; this.tiltOriginY = this._last.y; } }
+      else this.holdTime = 0;
+    }
+    if (this.tiltHeld) {
+      const dy = this._last.y - this.tiltOriginY;                 // screen down = positive
+      const span = Math.max(90, (this.canvas.clientHeight || 360) * 0.32);
+      this.tilt = Math.max(-1, Math.min(1, -dy / span * 2));      // drag up = closed face, down = open
+      this.onTilt(this.tilt);
+    }
   }
 
   // Called from the frame loop once no finger is down: bleed the velocity to zero so a released swipe stops
