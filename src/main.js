@@ -6,6 +6,7 @@ import { GRIPS, classify, synthesize, wingFor, familyFromSwipe } from './strokes
 import { LEVELS, LEVEL_ORDER } from './levels.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { RACKETS, RACKET_ORDER, surfaceFor, surfaceParams, RACKET_AI } from './rackets.js';
+import { RIVALS, UNLOCKED_BY_DEFAULT, loadRecord, saveRecord, isUnlocked, nextRival, rivalAvailable, rivalIndex, GameTracker, recordGame } from './career.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -169,6 +170,8 @@ const ui = {
   cheat: document.getElementById('cheat'), autoAim: document.getElementById('autoAim'), autoAimVal: document.getElementById('autoAimVal'),
   face: document.getElementById('face'), racketGrid: document.getElementById('racketGrid'), racketBlurb: document.getElementById('racketBlurb'),
   aiRacket: document.getElementById('aiRacket'),
+  careerModal: document.getElementById('careerModal'), ladder: document.getElementById('ladder'), pcard: document.getElementById('pcard'),
+  careerNote: document.getElementById('careerNote'), rivalBar: document.getElementById('rivalBar'), toast: document.getElementById('toast'),
   racketScale: document.getElementById('racketScale'), racketScaleVal: document.getElementById('racketScaleVal'),
   levelSeg: document.getElementById('levelSeg'), levelBlurb: document.getElementById('levelBlurb'), levelBadge: document.getElementById('levelBadge'),
   levelModal: document.getElementById('levelModal'),
@@ -214,11 +217,21 @@ const match = new Match({
       else { ui.aiShot.textContent = `AI: ${line}`; }
     }
     else if (e.type === 'toss') { trailCount = 0; }
+    else if (e.type === 'gameover') onGameOver(e);
+    if (typeof career !== 'undefined' && typeof match !== 'undefined') career.tracker.onEvent(e, match);
   },
 });
 match.assist = parseFloat(ui.assist.value);
 window.__match = match;   // for debugging / headless tests
 let lastPlayerStroke = null;
+
+// ---------- career ----------
+let storage = null; try { storage = window.localStorage; } catch (e) { /* private mode: no persistence, the game still plays */ }
+const career = { record: loadRecord(storage), tracker: new GameTracker(), rival: null };
+function showToast(big, small, ms = 3200) {
+  ui.toast.querySelector('.big').textContent = big; ui.toast.querySelector('.small').textContent = small;
+  ui.toast.classList.add('show'); clearTimeout(showToast.t); showToast.t = setTimeout(() => ui.toast.classList.remove('show'), ms);
+}
 
 // ---------- rackets ----------
 const racketState = { player: 'allround', ai: 'allround' };
@@ -238,14 +251,26 @@ function buildRacketGrid() {
     b.innerHTML = `<span class="top"><span class="swatch" style="background:#${R.accent.toString(16).padStart(6, '0')}"></span><span class="nm">${R.label}</span></span>
       <span class="bars"><span class="bar">spin<i><b style="width:${(spin * 100).toFixed(0)}%"></b></i></span>
       <span class="bar">speed<i><b style="width:${(speed * 100).toFixed(0)}%"></b></i></span></span>`;
-    b.addEventListener('click', () => setPlayerRacket(key));
+    b.addEventListener('click', () => {
+      if (!isUnlocked(career.record, key)) {
+        const by = RIVALS.find(r => r.racket === key);
+        showToast('Locked', by ? `Beat ${by.name}, ${by.title.toLowerCase()}, to earn the ${R.label.toLowerCase()}.` : 'Locked');
+        return;
+      }
+      setPlayerRacket(key);
+    });
     ui.racketGrid.appendChild(b);
   }
+  refreshRacketLocks();
   for (const key of RACKET_ORDER) { const o = document.createElement('option'); o.value = key; o.textContent = RACKETS[key].label; ui.aiRacket.appendChild(o); }
   ui.aiRacket.value = racketState.ai;
 }
+function refreshRacketLocks() {
+  for (const b of ui.racketGrid.querySelectorAll('[data-racket]')) b.dataset.locked = String(!isUnlocked(career.record, b.dataset.racket));
+}
 function setPlayerRacket(key, { remember = true } = {}) {
   if (!RACKETS[key]) return;
+  if (!isUnlocked(career.record, key)) key = 'allround';
   racketState.player = key;
   const R = RACKETS[key];
   for (const b of ui.racketGrid.querySelectorAll('[data-racket]')) b.setAttribute('aria-pressed', String(b.dataset.racket === key));
@@ -402,6 +427,7 @@ buildRacketGrid();
   match.ai.surface = surfaceParams(racketState.ai, 'fh');
 }
 ui.aiRacket.addEventListener('change', () => {
+  clearRival();
   racketState.ai = ui.aiRacket.value;
   match.ai.surface = surfaceParams(racketState.ai, 'fh');
   match.ai.racket.surface = surfaceParams(racketState.ai, 'fh');
@@ -409,8 +435,70 @@ ui.aiRacket.addEventListener('change', () => {
   match.ai.applyRacketTendencies(RACKET_AI[racketState.ai] || RACKET_AI.allround);
   try { localStorage.setItem('pingpang.aiRacket', racketState.ai); } catch (e) { /* ignore */ }
 });
-ui.level.addEventListener('change', () => { match.ai.setLevel(ui.level.value); customLevel(); });
-ui.style.addEventListener('change', () => match.ai.setStyle(ui.style.value));
+// ---------- career: rivals, unlocks, the card ----------
+function setRival(r) {
+  career.rival = r;
+  match.ai.setStyle(r.style); match.ai.setLevel(r.level);
+  racketState.ai = r.racket; ui.aiRacket.value = r.racket;
+  match.ai.surface = surfaceParams(r.racket, 'fh'); match.ai.racket.surface = match.ai.surface;
+  match.ai.applyRacketTendencies(RACKET_AI[r.racket] || RACKET_AI.allround);
+  ui.style.value = r.style; ui.level.value = r.level;
+  ui.rivalBar.innerHTML = `vs <b>${r.name}</b> · ${r.title} · ${RACKETS[r.racket].label}`;
+  match.reset(); career.tracker.reset();
+}
+function clearRival() { career.rival = null; ui.rivalBar.textContent = ''; }
+function renderCareer() {
+  const rec = career.record, next = nextRival(rec);
+  ui.ladder.innerHTML = '';
+  RIVALS.forEach((r, i) => {
+    const beaten = rec.beaten.includes(r.key), avail = rivalAvailable(rec, r.key);
+    const state = beaten ? 'beaten' : (r.key === next.key ? 'next' : (avail ? 'open' : 'locked'));
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'rival'; b.dataset.state = state; b.disabled = !avail;
+    b.innerHTML = `<span class="num">${beaten ? '✓' : i + 1}</span><span class="who"><span class="nm">${r.name}<span>${r.title}</span></span><span class="meta"><b>${RACKETS[r.racket].label}</b> · ${r.style} · ${r.level}${avail ? ' · ' + (beaten ? r.bio : r.hint) : ''}</span></span><span class="tag">${beaten ? 'beaten' : state === 'next' ? 'next' : avail ? 'open' : 'locked'}</span>`;
+    if (avail) b.addEventListener('click', () => { setRival(r); ui.careerModal.hidden = true; });
+    ui.ladder.appendChild(b);
+  });
+  const c = rec.card;
+  if (!c) {
+    ui.pcard.innerHTML = `<div class="empty">No card yet. Play one game and it fills in from what your shots did: how hard, how much spin, where they landed, how many came back.</div>`;
+  } else {
+    const row = (k, label) => `<div class="stat"><span>${label}</span><i><b style="width:${c[k]}%"></b></i><span>${c[k]}</span></div>`;
+    ui.pcard.innerHTML = `<div class="head"><div class="ovr">${c.overall}<small>OVR</small></div><div class="style"><small>plays like a</small>${c.style}</div></div>
+      <div class="stats">${row('power', 'power')}${row('spin', 'spin')}${row('placement', 'placement')}${row('consistency', 'consistency')}${row('defence', 'defence')}</div>
+      <div class="rec"><span>games <b>${rec.lifetime.wins}–${rec.lifetime.games - rec.lifetime.wins}</b></span><span>points <b>${rec.lifetime.pointsWon}/${rec.lifetime.points}</b></span><span>best rally <b>${rec.lifetime.longestRally}</b></span><span>shots <b>${rec.lifetime.shots}</b></span></div>`;
+  }
+  const unlocked = RACKET_ORDER.filter(k => isUnlocked(rec, k)).length;
+  ui.careerNote.textContent = rec.beaten.length >= RIVALS.length ? `Ladder complete. ${unlocked} of ${RACKET_ORDER.length} rackets earned.` : `Next: ${next.name}, ${next.title.toLowerCase()}. ${unlocked} of ${RACKET_ORDER.length} rackets earned.`;
+  document.getElementById('playRivalBtn').textContent = rec.beaten.length >= RIVALS.length ? `Play ${next.name} again` : `Play ${next.name}`;
+}
+function onGameOver(e) {
+  const won = e.winner === 'player';
+  const rival = career.rival;
+  const res = recordGame(career.record, rival, won, `${match.score.player}-${match.score.ai}`, career.tracker);
+  saveRecord(storage, career.record);
+  refreshRacketLocks();
+  if (res.firstWin) {
+    // A first win over a rival: name the racket only if it was actually locked until now (All-round is free).
+    const R = RACKETS[res.unlockedRacket];
+    const freeRacket = UNLOCKED_BY_DEFAULT.includes(res.unlockedRacket);
+    const big = freeRacket ? `${rival.name} beaten` : `${R.label} unlocked`;
+    const small = res.unlockedRival ? `${freeRacket ? 'First rung of the ladder.' : rival.name + ' is beaten.'} Next up: ${res.unlockedRival.name}, ${res.unlockedRival.title.toLowerCase()}.` : `${rival.name} is beaten. The ladder is yours.`;
+    setTimeout(() => showToast(big, small, 5000), 600);
+  } else if (won && rival) {
+    setTimeout(() => showToast('Win', `${rival.name} beaten again. Card updated.`, 2800), 600);
+  } else if (res.card) {
+    setTimeout(() => showToast('Card updated', `${res.card.overall} overall · plays like a ${res.card.style.toLowerCase()}`, 2800), 600);
+  }
+  career.tracker.reset();
+}
+document.getElementById('careerBtn').addEventListener('click', () => { renderCareer(); ui.careerModal.hidden = false; });
+document.getElementById('careerClose').addEventListener('click', () => { ui.careerModal.hidden = true; });
+document.getElementById('playRivalBtn').addEventListener('click', () => { setRival(nextRival(career.record)); ui.careerModal.hidden = true; });
+ui.careerModal.addEventListener('click', (e) => { if (e.target === ui.careerModal) ui.careerModal.hidden = true; });
+window.addEventListener('keydown', (e) => { if (e.key === 'c' || e.key === 'C') { if (ui.careerModal.hidden) { renderCareer(); ui.careerModal.hidden = false; } else ui.careerModal.hidden = true; } });
+// Manual opponent changes step out of the ladder: the game still plays, it just is not a rival match.
+ui.level.addEventListener('change', () => { match.ai.setLevel(ui.level.value); customLevel(); clearRival(); });
+ui.style.addEventListener('change', () => { match.ai.setStyle(ui.style.value); clearRival(); });
 function applyGrip() {
   const g = GRIPS[ui.grip.value];
   ui.gripBlurb.textContent = g.blurb;

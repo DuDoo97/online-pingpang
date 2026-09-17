@@ -79,6 +79,77 @@
     .rackets { grid-template-columns: repeat(3, 1fr); }
     .racket .bars { display: none; }
   }
+  /* ---- career ---- */
+  #careerModal { position: fixed; inset: 0; background: rgba(8, 10, 14, 0.82); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; z-index: 11; }
+  #careerModal[hidden] { display: none; }
+  .career { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px 18px; max-width: 900px; width: 100%; max-height: 94%; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  .career .body { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px 22px; min-height: 0; flex: 1; }
+  .career .body > div { min-height: 0; display: flex; flex-direction: column; }
+  .career h2 { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: 0.02em; text-transform: uppercase; margin: 0; line-height: 1; flex: 0 0 auto; }
+  .career .sub { color: var(--ink-dim); font-size: 12px; margin: 0; flex: 0 0 auto; }
+  .career h3 { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim); margin: 0 0 8px; font-weight: 500; }
+  .ladder { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; padding-right: 2px; }
+  .rival { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; text-align: left; font: inherit; color: var(--ink); background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; cursor: pointer; }
+  .rival:hover:not([disabled]), .rival:focus-visible { border-color: var(--ball); }
+  .rival[disabled] { opacity: 0.45; cursor: default; }
+  .rival[data-state="next"] { border-color: var(--ball); background: rgba(255, 179, 71, 0.07); }
+  .rival[data-state="beaten"] .num { color: #35b56b; }
+  .rival .num { font-family: var(--display); font-size: 22px; font-weight: 700; color: var(--ink-dim); text-align: center; line-height: 1; }
+  .rival .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rival .nm { font-family: var(--display); font-size: 17px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1; }
+  .rival .nm span { color: var(--ink-dim); font-weight: 500; margin-left: 6px; }
+  .rival .meta { font-size: 11px; color: var(--ink-dim); }
+  .rival .meta b { color: var(--ink); font-weight: 500; }
+  .rival .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); white-space: nowrap; }
+  .rival[data-state="beaten"] .tag { color: #35b56b; }
+  .rival[data-state="next"] .tag { color: var(--ball); }
+  .pcard { border: 1px solid var(--line); border-radius: 8px; padding: 14px 14px 12px; background: linear-gradient(160deg, rgba(255,179,71,0.08), rgba(143,211,255,0.05)); display: flex; flex-direction: column; gap: 10px; }
+  .pcard .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .pcard .ovr { font-family: var(--display); font-size: 44px; font-weight: 700; line-height: 1; color: var(--ball); font-variant-numeric: tabular-nums; }
+  .pcard .ovr small { font-size: 11px; font-family: var(--mono); color: var(--ink-dim); letter-spacing: 0.1em; margin-left: 4px; }
+  .pcard .style { font-family: var(--display); font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; text-align: right; line-height: 1.1; }
+  .pcard .style small { display: block; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--ink-dim); letter-spacing: 0.08em; text-transform: uppercase; }
+  .stats { display: flex; flex-direction: column; gap: 6px; }
+  .stat { display: grid; grid-template-columns: 82px 1fr 30px; gap: 8px; align-items: center; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim); }
+  .stat i { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); position: relative; overflow: hidden; }
+  .stat i b { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--ball); transition: width .5s ease; }
+  .stat span:last-child { text-align: right; font-family: var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .pcard .rec { font-size: 11px; color: var(--ink-dim); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .pcard .rec b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .pcard .empty { font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
+  .career .foot { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; flex: 0 0 auto; border-top: 1px solid var(--line); padding-top: 10px; }
+  .career .foot button, #careerBtn, #playRivalBtn { font: inherit; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 9px 12px; cursor: pointer; min-height: 40px; }
+  .career .foot button.primary, #playRivalBtn { background: var(--ball); color: #14171c; border-color: var(--ball); font-weight: 500; }
+  .career .foot .note { font-size: 11px; color: var(--ink-dim); }
+  #careerBtn { position: fixed; top: 14px; left: 18px; transform: translateY(118px); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--panel); padding: 6px 10px; min-height: 0; }
+  #rivalBar { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim); pointer-events: none; text-align: center; }
+  #rivalBar b { color: var(--ink); font-weight: 500; }
+  #toast { position: fixed; left: 50%; top: 36%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--ball); border-radius: 6px; padding: 14px 18px; text-align: center; z-index: 9; pointer-events: none; opacity: 0; transition: opacity .25s; max-width: 86vw; }
+  #toast.show { opacity: 1; }
+  #toast .big { font-family: var(--display); font-size: 26px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ball); line-height: 1; }
+  #toast .small { font-size: 12px; color: var(--ink-dim); margin-top: 4px; }
+  .racket[data-locked="true"] { opacity: 0.4; }
+  .racket[data-locked="true"] .nm::after { content: ' 🔒'; font-size: 11px; }
+  @media (pointer: coarse), (max-width: 900px) {
+    .career { gap: 8px; padding: 14px; }
+    .career .body { grid-template-columns: 1fr; gap: 10px; }
+    .career h2 { font-size: 24px; }
+    #careerBtn { left: 12px; top: 12px; transform: translateY(96px); }
+    #rivalBar { top: auto; bottom: 132px; font-size: 10px; }
+    #careerModal { padding: 10px; }
+  }
+  @media (pointer: coarse) and (orientation: landscape) and (max-height: 420px) {
+    .career { gap: 6px; padding: 10px 12px; }
+    .career .body { grid-template-columns: 1.25fr 1fr; gap: 8px 14px; }
+    .career h2 { font-size: 20px; }
+    .career .sub { display: none; }
+    .career .foot { padding-top: 6px; }
+    .career .foot button { padding: 7px 10px; min-height: 34px; font-size: 12px; }
+    .rival { padding: 6px 9px; gap: 8px; } .rival .nm { font-size: 14px; } .rival .meta { display: none; }
+    .pcard { padding: 10px; gap: 6px; } .pcard .ovr { font-size: 32px; }
+    #rivalBar { display: none; }
+    #careerBtn { top: 58px; transform: none; left: 12px; }
+  }
   #spinBadge { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 5px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 12px; pointer-events: none; min-height: 14px; }
   #spinBadge:empty { display: none; }
   #spinBadge[data-kind="topspin"] { border-color: #ff7a59; } #spinBadge[data-kind="backspin"] { border-color: #8fd3ff; } #spinBadge[data-kind="sidespin"] { border-color: #c8ff8f; }
@@ -211,7 +282,7 @@
   <b>mouse</b> racket · <b>swipe</b> at the ball = swing · <b>hold left</b> topspin · <b>hold right</b> backspin<br>
   <b>shift+drag</b> or <b>[ ]</b> tilt the face · <b>0</b> or click the readout to hand it back<br>
   <b>click / space</b> toss serve · <b>wheel / W S</b> step back or in · <b>H</b> stroke guide<br>
-  <b>1–4</b> level · <b>R</b> restart · first to 11, win by 2
+  <b>C</b> career and player card · <b>1–4</b> level · <b>R</b> restart · first to 11, win by 2
 </div>
 
 <aside id="cheat">
@@ -250,6 +321,30 @@
 <button id="toggleCheat" type="button">stroke guide</button>
 
 <button id="fullBtn" type="button" title="Fullscreen">fullscreen</button>
+<button id="careerBtn" type="button">career · C</button>
+<div id="rivalBar"></div>
+<div id="toast"><div class="big"></div><div class="small"></div></div>
+
+<div id="careerModal" hidden>
+  <div class="career" role="dialog" aria-labelledby="carTitle">
+    <h2 id="carTitle">Career</h2>
+    <p class="sub">Seven rivals, each with a racket and a game of their own. Beat one to unlock the next and take their blade. Your card is built from what your shots actually did.</p>
+    <div class="body">
+      <div>
+        <h3>The ladder</h3>
+        <div class="ladder" id="ladder"></div>
+      </div>
+      <div>
+        <h3>Your card</h3>
+        <div class="pcard" id="pcard"></div>
+      </div>
+    </div>
+    <div class="foot">
+      <span class="note" id="careerNote"></span>
+      <span style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="careerClose">Close</button><button type="button" class="primary" id="playRivalBtn">Play next rival</button></span>
+    </div>
+  </div>
+</div>
 
 <div id="rotate">
   <div class="box">
@@ -306,7 +401,7 @@
   </label>
   <h3>Opponent</h3>
   <label><span>Level</span>
-    <select id="level"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option><option value="pro">Pro: places the ball away from you</option></select>
+    <select id="level"><option value="starter">Starter</option><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option><option value="pro">Pro: places the ball away from you</option></select>
   </label>
   <label><span>Style</span>
     <select id="style"><option value="attacker" selected>Attacker: loops, flicks, smashes</option><option value="controller">Controller: blocks, pushes, drives</option><option value="chopper">Chopper: stands back and chops</option></select>

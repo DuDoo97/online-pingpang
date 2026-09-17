@@ -2,6 +2,8 @@
 import { Ball, Racket, PARAMS, TABLE, BALL, simulateFlight, spinComponents, v3, add, sub, scale, len, norm, cross, dot } from './physics.js';
 
 export const DIFFICULTY = {
+  // starter: a first opponent for a newcomer. Slow to react, wide aim scatter, and it fluffs one ball in four.
+  starter:{ reaction: 0.36, aimNoise: 0.34, moveSpeed: 1.8, power: 0.45, spin: 0.25, missChance: 0.25 },
   easy:   { reaction: 0.28, aimNoise: 0.22, moveSpeed: 2.2, power: 0.55, spin: 0.35, missChance: 0.10 },
   medium: { reaction: 0.18, aimNoise: 0.14, moveSpeed: 3.5, power: 0.75, spin: 0.7,  missChance: 0.04 },
   hard:   { reaction: 0.10, aimNoise: 0.07, moveSpeed: 5.5, power: 1.0,  spin: 1.0,  missChance: 0.01, placement: 0.6 },

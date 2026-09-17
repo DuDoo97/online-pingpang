@@ -78,6 +78,47 @@ exactly as the mouse measures cursor speed, so the same stroke table and the sam
 The app asks for landscape (the table is wide), offers fullscreen with a landscape orientation lock where the
 browser allows it, and stays playable in portrait with a wider lens and the camera pulled back.
 
+## Career: rivals, unlocks and a player card
+
+Press **C** (or the career button) for the ladder and your card.
+
+**Seven rivals**, each a combination of playing style, racket and difficulty, with a bio and a tactical hint. Beat one
+to unlock the next and take their blade. They are ordered to teach the game: pace first, then spin, then defence.
+
+| # | Rival | Racket | What they teach |
+|---|---|---|---|
+| 1 | **Mika**, the Wall | All-round | Blocks everything. Move the ball around. |
+| 2 | **Tomás**, the Hammer | All-out attack | Pure pace. Stand back and block. |
+| 3 | **Yuki**, the Spinner | Spin machine | Read the spin or be long. |
+| 4 | **Dev**, the Pips | Short pips | Your spin does nothing. Hit through him. |
+| 5 | **Inês**, the Chopper | Chopper | Her backhand pips hand your topspin back as backspin. |
+| 6 | **Ren**, the Ghost | Anti-spin | Nothing comes back. Generate everything yourself. |
+| 7 | **Sol**, the Champion | All-out attack, Pro | Full speed, no help, places the ball where you are not. |
+
+**Rackets are earned, not chosen.** You start with All-round; every other blade is unlocked by beating the rival who
+uses it. Tapping a locked racket tells you who is holding it.
+
+**The player card** is computed from what your shots actually did, not from games played. Five stats, each 0-100:
+
+| Stat | Measured from |
+|---|---|
+| **Power** | Top-quartile speed of your shots (5 m/s is a push, 18 a real smash) |
+| **Spin** | Top-quartile rpm you put on the ball (1,000 is a brush, 5,000 a heavy loop) |
+| **Placement** | How deep and how close to the sidelines your landing shots go |
+| **Consistency** | Share of your shots that landed, weighted by rally length |
+| **Defence** | Points won from rallies of three shots or more |
+
+The card also names the player you are: Hitter, Looper, Tactician, Wall, Chopper at heart. It blends across games
+with a 40% weight, so one good game nudges it and a real change of habit moves it within a few games. Everything
+persists in local storage, and a corrupt record falls back to empty rather than breaking the game.
+
+To grade shots, the match now forward-simulates every player hit to its first table event, which yields landing
+depth, net clearance and aim. That is the same flight solver the AI already uses to predict, so it costs one call
+per hit.
+
+Picking an opponent manually from the settings panel steps out of the ladder: the game still plays, it just is not
+a rival match and cannot unlock anything.
+
 ## Rackets
 
 Six blades with genuinely different rubbers, chosen in the settings panel. A racket never changes the ball's flight,
@@ -170,6 +211,7 @@ half first, a serve that clips the net is a let, volleys lose the point.
   switch, table/net/floor collisions, swept racket collision, forward simulation.
 - `src/strokes.js` — the stroke grammar: grips, stroke recipes, gesture classifier, swing synthesizer with the hand's
   face-angle solver.
+- `src/career.js` — the rival ladder, racket unlocks, the shot tracker and the player-card maths.
 - `src/rackets.js` — the six blades: surface constants, per-wing differences, and AI tendencies.
 - `src/touch.js` — touch input: one-finger racket control, swipe-direction families, tap to serve, two-finger stance.
 - `src/levels.js` — the four player levels (assist, racket drift, racket size, ball speed, opponent, coaching).
@@ -179,7 +221,8 @@ half first, a serve that clips the net is a let, volleys lose the point.
 - `src/main.js` — Three.js scene, mouse racket, HUD, live physics panel.
 - `test/` — `physics.test.mjs` (ITTF drop test, terminal velocity, Magnus sign, bounce spin coupling, racket brush,
   net), `strokes.test.mjs` (gesture classification, grip rules, spin/speed of each synthesized stroke),
-  `rackets.test.mjs` (each blade is physically distinct and cannot break the game), `styles.test.mjs` (each AI style rallies and uses its signature strokes), `levels.test.mjs` (all four level presets
+  `rackets.test.mjs` (each blade is physically distinct and cannot break the game),
+  `career.test.mjs` (the ladder unlocks in order, a loss unlocks nothing, the card is built from real telemetry and survives a save/load), `styles.test.mjs` (each AI style rallies and uses its signature strokes), `levels.test.mjs` (all four level presets
   play as advertised: a parked-racket bot returns balls at Newbie/Casual), `pro.test.mjs` (a club-level scripted
   player wins points with raw physics), `rally.test.mjs`, `match.test.mjs`.
 - `docs/research-physics.md`, `docs/research-games-and-architecture.md` — research reports with sources.

@@ -1,5 +1,5 @@
 // game.js — match rules and the fixed-step simulation loop (headless: no rendering here).
-import { Ball, Racket, PARAMS, TABLE, BALL, stepBall, collideRacket, spinComponents, v3, add, sub, scale, len, lerp, norm } from './physics.js';
+import { Ball, Racket, PARAMS, TABLE, BALL, stepBall, collideRacket, spinComponents, simulateFlight, v3, add, sub, scale, len, lerp, norm } from './physics.js';
 import { AIPlayer, planServe, solveAssist } from './ai.js';
 
 const other = (s) => (s === 'player' ? 'ai' : 'player');
@@ -86,7 +86,22 @@ export class Match {
     if (Math.max(a, b) > 60) kind = a >= b ? (sc.top > 0 ? 'topspin' : 'backspin') : 'sidespin';
     const receive = this.shots === 1;
     this.shots++;
-    this.lastShot = { who, speed: len(this.ball.vel), rpm: sc.rpm, kind, pos, stroke, receive };
+    // Where is this ball going? Forward-simulate to its first table event so the shot can be graded on landing
+    // depth, net clearance and aim. This is the same simulator the AI uses to predict; one call per hit is cheap.
+    let clearance = null, depth = null, landed = null, aimX = null;
+    if (who === 'player') {
+      const probe = this.ball.clone();
+      let prevZ = probe.pos.z;
+      const r = simulateFlight(probe, PARAMS, { maxTime: 2.0, dt: 1 / 120, stop: (b, t, ev) => {
+        if (clearance === null && prevZ > 0 && b.pos.z <= 0) clearance = b.pos.y - (TABLE.height + TABLE.netHeight);
+        prevZ = b.pos.z;
+        return ev.length > 0;
+      } });
+      const e = r.events[0];
+      if (e && e.type === 'bounce' && e.side === 'ai') { landed = true; depth = -e.pos.z; aimX = e.pos.x; }
+      else landed = false;
+    }
+    this.lastShot = { who, speed: len(this.ball.vel), rpm: sc.rpm, kind, pos, stroke, receive, clearance, depth, landed, aimX };
     this.onEvent({ type: 'shot', ...this.lastShot });
   }
 

@@ -9,7 +9,7 @@ export const LEVELS = {
   newbie: {
     label: 'Newbie', key: '1',
     blurb: 'Half speed, so there is time to see the ball. The racket drifts toward it, almost every hit is steered onto the table, and a coach explains each lost point.',
-    assist: 0.95, autoAim: 0.85, racketScale: 1.5, timeScale: 0.5, ai: 'easy', coach: true, hints: true,
+    assist: 0.95, autoAim: 0.85, racketScale: 1.5, timeScale: 0.5, ai: 'starter', coach: true, hints: true,
   },
   casual: {
     label: 'Casual', key: '2',
