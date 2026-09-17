@@ -1,6 +1,6 @@
 // Stroke grammar checks: gestures classify as the intended stroke, and the synthesized swing produces the
 // right physics (spin sign and magnitude, speed ordering) when it hits a real ball.
-import { classify, synthesize, GRIPS, wingFor } from '../src/strokes.js';
+import { classify, synthesize, GRIPS, wingFor, familyFromSwipe } from '../src/strokes.js';
 import { Ball, Racket, collideRacket, spinComponents, v3, len, norm, sub, scale } from '../src/physics.js';
 let fails = 0;
 const check = (name, cond, detail = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '   (' + detail + ')' : ''}`); if (!cond) fails++; };
@@ -72,6 +72,29 @@ const penLoop = hitWith('loop', { speed: 5.5, vx: 0, fwd: 5.5, button: 'L' }, 'p
 check('penhold forehand loop spins more than shakehand', penLoop.rpm > loop.rpm, `${Math.round(penLoop.rpm)} vs ${Math.round(loop.rpm)} rpm`);
 const bhTrad = synthesize('loop', { speed: 6, vx: 0, fwd: 6, button: 'L' }, 'penhold', 'bh');
 check('traditional penhold backhand face cannot close past -12°', bhTrad.tilt >= -12, `tilt ${bhTrad.tilt}`);
+
+// --- touch mode: the swipe direction picks the family, and a downward swipe must reach push/longpush/chop and
+// NOT be mistaken for "the player is not swinging" (which on the mouse means block/short push).
+{
+  check('swipe up reads as the topspin family', familyFromSwipe(0, 5) === 'L', String(familyFromSwipe(0, 5)));
+  check('swipe down reads as the backspin family', familyFromSwipe(0, -5) === 'R', String(familyFromSwipe(0, -5)));
+  check('a sideways swipe reads as flat', familyFromSwipe(5, 0.4) === null, String(familyFromSwipe(5, 0.4)));
+  check('a tiny motion reads as nothing held', familyFromSwipe(0.2, 0.1) === null);
+  const up = classify({ button: familyFromSwipe(0.2, 5), speed: 5, vx: 0.2, fwd: 5, ctx: {}, inputMode: 'touch' });
+  const down = classify({ button: familyFromSwipe(0.2, -2.6), speed: 2.6, vx: 0.2, fwd: -2.6, ctx: {}, inputMode: 'touch' });
+  const hardDown = classify({ button: familyFromSwipe(0, -4.4), speed: 4.4, vx: 0, fwd: -4.4, ctx: {}, inputMode: 'touch' });
+  const farDown = classify({ button: familyFromSwipe(0, -4.2), speed: 4.2, vx: 0, fwd: -4.2, ctx: { far: true }, inputMode: 'touch' });
+  check('touch: up-swipe is a loop', up.key === 'loop', up.label);
+  check('touch: gentle down-swipe is a push', down.key === 'push', down.label);
+  check('touch: hard down-swipe is a fast long push', hardDown.key === 'longpush', hardDown.label);
+  check('touch: down-swipe from far back is a chop', farDown.key === 'chop', farDown.label);
+  const idle = classify({ button: null, speed: 0.2, vx: 0, fwd: 0.2, ctx: {}, inputMode: 'touch' });
+  check('touch: a still finger blocks', idle.key === 'block', idle.label);
+  const short = classify({ button: 'L', speed: 3.2, vx: 0.3, fwd: 3.1, ctx: { short: true }, inputMode: 'touch' });
+  check('touch: swipe at a short ball flicks', short.key === 'flick', short.label);
+  const mouseDown = classify({ button: 'R', speed: 2.6, vx: 0, fwd: -2.6, ctx: {}, inputMode: 'mouse' });
+  check('mouse mode is unchanged: pulling the cursor down is still a push by the button', mouseDown.key === 'shortpush', mouseDown.label);
+}
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nall stroke checks passed');
 process.exit(fails ? 1 : 0);

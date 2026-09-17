@@ -161,10 +161,12 @@ export function wingFor(x, hand, current) {
 
 // gesture: { speed, vx, fwd } in m/s (speed = |(vx, fwd)|, fwd > 0 toward the net).
 // ctx: { serving, receiving, short, high, far, incomingTop }
-export function classify({ button = null, speed = 0, vx = 0, fwd = 0, ctx = {}, grip = 'shakehand', wing = 'fh' }) {
+// inputMode: 'mouse' (default) or 'touch'. On touch the swipe DIRECTION carries the family, so a downward swipe is
+// a backspin stroke rather than the mouse's "pulled the cursor away, so this counts as not swinging".
+export function classify({ button = null, speed = 0, vx = 0, fwd = 0, ctx = {}, grip = 'shakehand', wing = 'fh', inputMode = 'mouse' }) {
   const G = GRIPS[grip] || GRIPS.shakehand; const W = G[wing] || G.fh;
   const lateral = Math.abs(vx);
-  const still = speed < 1.2 || fwd < -0.5;                 // not moving, or pulling away from the ball
+  const still = inputMode === 'touch' ? speed < 1.2 : (speed < 1.2 || fwd < -0.5);
   let key, note = '';
   if (ctx.serving) {
     if (speed > 1.5 && lateral > 0.8 * Math.abs(fwd)) key = 'serveSide';
@@ -192,6 +194,17 @@ export function classify({ button = null, speed = 0, vx = 0, fwd = 0, ctx = {}, 
   const S = STROKES[key];
   const prefix = ctx.receiving && !ctx.serving ? 'Receive · ' : '';
   return { key, label: `${prefix}${wingTag(grip, wing)} ${S.label}`, hint: note || S.hint, note };
+}
+
+// On touch, derive the stroke family from the swipe direction: up = topspin (left button), down = backspin
+// (right button), mostly sideways = flat. `vx`/`vy` are world-frame hand velocities in m/s.
+export function familyFromSwipe(vx, vy) {
+  const speed = Math.hypot(vx, vy);
+  if (speed < 0.6) return null;                            // no decisive direction: nothing held = flat/block
+  const up = vy / speed;
+  if (up > 0.35) return 'L';
+  if (up < -0.35) return 'R';
+  return null;
 }
 
 // Turn the gesture into the racket's velocity and face normal (player faces −z).

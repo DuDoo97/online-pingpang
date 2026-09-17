@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { Match } from './game.js';
 import { PARAMS, TABLE, BALL, spinComponents, simulateFlight, v3, len } from './physics.js';
-import { GRIPS, classify, synthesize, wingFor } from './strokes.js';
+import { GRIPS, classify, synthesize, wingFor, familyFromSwipe } from './strokes.js';
 import { LEVELS, LEVEL_ORDER } from './levels.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -156,7 +157,7 @@ const ui = {
   rally: document.getElementById('rally'), level: document.getElementById('level'), style: document.getElementById('style'),
   grip: document.getElementById('grip'), gripBlurb: document.getElementById('gripBlurb'), hand: document.getElementById('hand'),
   assist: document.getElementById('assist'), assistVal: document.getElementById('assistVal'), pred: document.getElementById('pred'),
-  slow: document.getElementById('slow'), cam: document.getElementById('camsel'), spinBadge: document.getElementById('spinBadge'),
+  speed: document.getElementById('speed'), speedVal: document.getElementById('speedVal'), cam: document.getElementById('camsel'), spinBadge: document.getElementById('spinBadge'),
   log: document.getElementById('log'), stroke: document.getElementById('stroke'), strokeHint: document.getElementById('strokeHint'),
   coach: document.getElementById('coach'), stance: document.getElementById('stance'), aiShot: document.getElementById('aiShot'),
   cheat: document.getElementById('cheat'), autoAim: document.getElementById('autoAim'), autoAimVal: document.getElementById('autoAimVal'),
@@ -218,11 +219,12 @@ function applyLevel(key, { remember = true } = {}) {
   const L = LEVELS[key]; if (!L) return;
   applyingLevel = true;
   settings.level = key; settings.autoAim = L.autoAim; settings.coach = L.coach; settings.hints = L.hints;
-  match.assist = L.assist; match.racketScale = L.racketScale; match.timeScale = ui.slow.checked ? 0.35 : L.timeScale;
+  match.assist = L.assist; match.racketScale = L.racketScale; match.timeScale = L.timeScale;
   match.ai.setLevel(L.ai);
   ui.assist.value = L.assist; ui.assistVal.textContent = Math.round(L.assist * 100) + '%';
   ui.autoAim.value = L.autoAim; ui.autoAimVal.textContent = Math.round(L.autoAim * 100) + '%';
   ui.racketScale.value = L.racketScale; ui.racketScaleVal.textContent = L.racketScale.toFixed(1) + '×';
+  ui.speed.value = L.timeScale; ui.speedVal.textContent = L.timeScale.toFixed(2) + '×';
   ui.level.value = L.ai;
   for (const b of ui.levelSeg.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.level === key));
   ui.levelBlurb.textContent = L.blurb;
@@ -238,7 +240,7 @@ function customLevel() {
   ui.levelBadge.textContent = 'custom';
   ui.levelBlurb.textContent = 'Custom mix of the sliders below.';
 }
-for (const b of document.querySelectorAll('[data-level]')) b.addEventListener('click', () => { applyLevel(b.dataset.level); ui.levelModal.hidden = true; });
+for (const b of document.querySelectorAll('[data-level]')) b.addEventListener('click', () => { applyLevel(b.dataset.level); ui.levelModal.hidden = true; maybeShowTouchHint(); });
 ui.levelBadge.addEventListener('click', () => { ui.levelModal.hidden = false; });
 ui.levelModal.addEventListener('click', (e) => { if (e.target === ui.levelModal) ui.levelModal.hidden = true; });
 {
@@ -275,16 +277,26 @@ const rs = {
   wing: 'fh', stroke: null, swing: null,
   gesture: { speed: 0, vx: 0, fwd: 0 },
 };
-canvas.addEventListener('pointermove', (ev) => {
+// The one place a screen point becomes the racket's target position: the mouse, a finger and the drift assist all
+// funnel through here, so there is a single source of truth for where the hand is.
+function setCursorFromScreen(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
-  ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
   const hit = new THREE.Vector3();
   if (raycaster.ray.intersectPlane(controlPlane, hit)) {
     rs.cursor = v3(Math.max(-1.4, Math.min(1.4, hit.x)), Math.max(TABLE.height - 0.1, Math.min(TABLE.height + 1.2, hit.y)), rs.cursor.z);
   }
+}
+let inputKind = isTouchDevice() ? 'touch' : 'mouse';   // the stroke family comes from a button on the mouse and from the swipe direction on a finger
+canvas.addEventListener('pointermove', (ev) => {
+  if (ev.pointerType && ev.pointerType !== 'mouse') return;      // fingers are handled by TouchControls
+  inputKind = 'mouse';
+  setCursorFromScreen(ev.clientX, ev.clientY);
 });
 canvas.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType && ev.pointerType !== 'mouse') return;
+  inputKind = 'mouse';
   if (ev.button === 0) rs.button = 'L'; else if (ev.button === 2) rs.button = 'R';
   if (match.restartIfOver()) return;
   if (ev.button === 0 || ev.button === 2) match.toss();
@@ -302,6 +314,15 @@ window.addEventListener('keydown', (e) => {
 });
 canvas.addEventListener('wheel', (e) => { setStance(stanceIx + Math.sign(e.deltaY)); }, { passive: true });
 
+// ---------- touch: one finger plays the game ----------
+const touch = new TouchControls(canvas, {
+  onTap: () => { if (!match.restartIfOver()) match.toss(); },
+  onStance: (dir) => setStance(stanceIx + dir),
+});
+touch.onCursor = (x, y) => { inputKind = 'touch'; setCursorFromScreen(x, y); };
+touch.liftPx = Math.min(120, (typeof window !== 'undefined' ? window.innerHeight : 800) * 0.18);
+touch.tapTarget = null;
+
 // ---------- UI wiring ----------
 ui.level.addEventListener('change', () => { match.ai.setLevel(ui.level.value); customLevel(); });
 ui.style.addEventListener('change', () => match.ai.setStyle(ui.style.value));
@@ -314,7 +335,7 @@ ui.grip.addEventListener('change', applyGrip); applyGrip();
 ui.assist.addEventListener('input', () => { match.assist = parseFloat(ui.assist.value); ui.assistVal.textContent = Math.round(match.assist * 100) + '%'; customLevel(); });
 ui.autoAim.addEventListener('input', () => { settings.autoAim = parseFloat(ui.autoAim.value); ui.autoAimVal.textContent = Math.round(settings.autoAim * 100) + '%'; customLevel(); });
 ui.racketScale.addEventListener('input', () => { match.racketScale = parseFloat(ui.racketScale.value); ui.racketScaleVal.textContent = match.racketScale.toFixed(1) + '×'; customLevel(); });
-ui.slow.addEventListener('change', () => { match.timeScale = ui.slow.checked ? 0.35 : (LEVELS[settings.level] ? LEVELS[settings.level].timeScale : 1); });
+ui.speed.addEventListener('input', () => { match.timeScale = parseFloat(ui.speed.value); ui.speedVal.textContent = match.timeScale.toFixed(2) + '×'; customLevel(); });
 ui.pred.addEventListener('change', () => { predLine.visible = ui.pred.checked; });
 
 // physics parameter panel
@@ -337,13 +358,47 @@ document.getElementById('resetParams').addEventListener('click', () => {
   for (const [k] of PARAM_UI) { document.getElementById('p_' + k).value = PARAMS[k]; document.getElementById('o_' + k).textContent = PARAMS[k]; }
 });
 document.getElementById('togglePanel').addEventListener('click', () => document.getElementById('side').classList.toggle('open'));
+
+// ---------- phone shell: fullscreen, orientation, first-run touch hint ----------
+const hint = document.getElementById('touchHint');
+function maybeShowTouchHint() {
+  if (inputKind !== 'touch') return;
+  let seen = null; try { seen = localStorage.getItem('pingpang.touchHint'); } catch (e) { /* ignore */ }
+  if (!seen && ui.levelModal.hidden && hint.style.display !== 'block') hint.style.display = 'flex';
+}
+{
+  const fullBtn = document.getElementById('fullBtn');
+  fullBtn.addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        await document.documentElement.requestFullscreen();
+        await screen.orientation?.lock?.('landscape').catch(() => {});   // Android Chrome; iOS ignores it
+      }
+    } catch (e) { /* ignore: fullscreen is a nicety, not a requirement */ }
+  });
+  document.addEventListener('fullscreenchange', () => { fullBtn.textContent = document.fullscreenElement ? 'exit' : 'fullscreen'; });
+
+  const rotate = document.getElementById('rotate');
+  document.getElementById('rotateAnyway').addEventListener('click', () => { rotate.hidden = true; rotate.style.display = 'none'; });
+  window.addEventListener('orientationchange', () => { rotate.hidden = false; rotate.style.display = ''; });
+
+  document.getElementById('touchHintOk').addEventListener('click', () => {
+    hint.style.display = 'none';
+    try { localStorage.setItem('pingpang.touchHint', '1'); } catch (e) { /* ignore */ }
+  });
+}
 document.getElementById('toggleCheat').addEventListener('click', () => ui.cheat.classList.toggle('open'));
 
 // ---------- loop ----------
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
   if (canvas.width !== Math.floor(w * renderer.getPixelRatio()) || canvas.height !== Math.floor(h * renderer.getPixelRatio())) {
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false); camera.aspect = w / h;
+    // In portrait the horizontal field of view is much narrower than the vertical one, so a wide table would be
+    // cropped. Widen the lens and stand further back; landscape keeps the tuned 48 degrees.
+    camera.fov = camera.aspect < 1 ? 68 : 48;
+    camera.updateProjectionMatrix();
   }
 }
 let last = performance.now();
@@ -386,6 +441,9 @@ function frame(now) {
   resize();
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (dt <= 0) dt = 1 / 60;
+  // The world runs on the game clock (dt × timeScale). Measure the hand on that same clock, otherwise slowing the
+  // world silently makes the player's swing faster relative to the ball, which is the opposite of easier.
+  const dtGame = Math.max(1e-4, dt * match.timeScale);
 
   const ctx = situation(now);
   const hand = ui.hand.value === 'left' ? -1 : 1;
@@ -396,7 +454,7 @@ function frame(now) {
   const stanceZ = TABLE.length / 2 + STANCES[stanceIx].depth;
   // cursor velocity (smoothed) = the gesture. Any decisive cursor motion is a swing AT the ball: its size is the
   // power, its sideways part is sidespin, and the held button decides the family (topspin / backspin / flat).
-  const k = 1 - Math.exp(-dt * 30);
+  const k = 1 - Math.exp(-dtGame * 30);
   // racket drift (Newbie/Casual): the hand eases toward where the ball will be, more strongly as it gets close
   let cx = rs.cursor.x, cy = rs.cursor.y;
   if (settings.autoAim > 0 && aimTarget && aimTarget.t < 0.9) {
@@ -404,20 +462,26 @@ function frame(now) {
     cx = cx + (aimTarget.x - cx) * w; cy = cy + (aimTarget.y - 0.02 - cy) * w;
   }
   const nx = rs.pos.x + (cx - rs.pos.x) * k, ny = rs.pos.y + (cy - rs.pos.y) * k;
-  const raw = v3((nx - rs.pos.x) / dt, (ny - rs.pos.y) / dt, 0);
-  const a = 1 - Math.exp(-dt * 16);
+  const raw = v3((nx - rs.pos.x) / dtGame, (ny - rs.pos.y) / dtGame, 0);
+  const a = 1 - Math.exp(-dtGame * 16);
   rs.cursorVel = v3(rs.cursorVel.x + (raw.x - rs.cursorVel.x) * a, rs.cursorVel.y + (raw.y - rs.cursorVel.y) * a, 0);
   const speed = Math.hypot(rs.cursorVel.x, rs.cursorVel.y);
   const fwd = speed;
   // The swing also carries the racket forward (a lunge that grows with swipe speed) and eases back afterwards.
   const lunge = Math.min(0.28, speed * 0.05);
   const goalZ = (stepTarget ? stepTarget.z : stanceZ) - lunge;
-  const kz = 1 - Math.exp(-dt * (goalZ < rs.pos.z ? 32 : 9));
+  const kz = 1 - Math.exp(-dtGame * (goalZ < rs.pos.z ? 32 : 9));
   rs.pos = v3(nx, ny, rs.pos.z + (goalZ - rs.pos.z) * kz);
-  rs.gesture = { speed, vx: rs.cursorVel.x, fwd, button: rs.button };   // world frame: swipe right = aim/spin right
+  // Family: on the mouse it is the held button; on a phone it is the direction of the swipe (up = topspin,
+  // down = backspin, sideways = flat), which is the one gesture a player already knows.
+  if (inputKind === 'touch') {
+    touch.decay(dtGame);
+    rs.button = familyFromSwipe(rs.cursorVel.x, rs.cursorVel.y);
+  }
+  rs.gesture = { speed, vx: rs.cursorVel.x, fwd: (inputKind === 'touch' && rs.button === 'R') ? -speed : speed, button: rs.button };   // world frame: swipe right = aim/spin right
   // wing: which side of the body the hand is on (serving: forehand)
   if (!match.ball.active || match.lastHitter !== 'ai') rs.wing = wingFor(rs.pos.x, hand, rs.wing);
-  const cls = classify({ button: rs.button, speed, vx: rs.gesture.vx, fwd, ctx, grip, wing: rs.wing });
+  const cls = classify({ button: rs.button, speed, vx: rs.gesture.vx, fwd: rs.gesture.fwd, ctx, grip, wing: rs.wing, inputMode: inputKind });
   rs.stroke = cls;
   // The hand solves the face angle against the real incoming ball. It is a flight search, so run it at ~20 Hz
   // (and only when a ball is live); in between, keep the last solved swing scaled to the current gesture.
@@ -431,12 +495,12 @@ function frame(now) {
   } else if (live && lastSw) sw = lastSw;
   else sw = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx);
   // racket velocity for the physics: the synthesized swing plus the actual body motion in depth
-  rs.vel = v3(sw.vel.x, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dt * 0.5);
+  rs.vel = v3(sw.vel.x, sw.vel.y, sw.vel.z + (rs.pos.z - rs.prev.z) / dtGame * 0.5);
   rs.normal = v3(sw.normal.x, sw.normal.y, sw.normal.z);
 
   // At the instant of contact the hand re-solves the face against the ball as it actually is (the frame's solve
   // can be up to 50 ms stale, which at 6 m/s is 30 cm of ball travel).
-  const bodyVz = (rs.pos.z - rs.prev.z) / dt * 0.5;
+  const bodyVz = (rs.pos.z - rs.prev.z) / dtGame * 0.5;
   const refine = (ballNow) => {
     const s2 = synthesize(cls.key, rs.gesture, grip, rs.wing, ctx, ballNow, { x: rs.pos.x, y: rs.pos.y, z: rs.pos.z });
     return { normal: s2.normal, vel: v3(s2.vel.x, s2.vel.y, s2.vel.z + bodyVz) };
@@ -482,10 +546,11 @@ function frame(now) {
   const mode = ui.cam.value;
   const follow = b.active ? b.pos.x * 0.25 : 0;
   const back = STANCES[stanceIx].depth * 0.6;
+  const portrait = camera.aspect < 1;
   const goal = mode === 'side'
     ? new THREE.Vector3(3.2, TABLE.height + 0.9, 0.4)
     : mode === 'top' ? new THREE.Vector3(0, TABLE.height + 3.8, 0.01)
-    : new THREE.Vector3(CAM_HOME.x + follow, CAM_HOME.y + back * 0.25, CAM_HOME.z + back);
+    : new THREE.Vector3(CAM_HOME.x + follow, CAM_HOME.y + back * 0.25 + (portrait ? 0.5 : 0), CAM_HOME.z + back + (portrait ? 1.6 : 0));
   camera.position.lerp(goal, 1 - Math.exp(-dt * 4));
   if (shake > 0) { camera.position.x += (Math.random() - 0.5) * 0.01 * shake; camera.position.y += (Math.random() - 0.5) * 0.01 * shake; shake = Math.max(0, shake - dt * 4); }
   camera.lookAt(camTarget);

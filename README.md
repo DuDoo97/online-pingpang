@@ -23,10 +23,17 @@ badge under the score):
 
 | Level | Landing help | Racket drift to the ball | Racket size | Ball speed | Opponent | Coach / hints |
 |---|---|---|---|---|---|---|
-| **Newbie** | 95 % | 70 % | 1.5× | 0.8× | Easy | on |
-| **Casual** | 60 % | 35 % | 1.2× | 1× | Medium | on |
-| **Club** | 30 % | 10 % | 1× | 1× | Hard | on |
-| **Pro** | none | none | 1× | 1× | Pro: places the ball away from your racket | off |
+| **Newbie** | 95 % | 85 % | 1.5× | 0.50× | Easy | on |
+| **Casual** | 60 % | 35 % | 1.2× | 0.70× | Medium | on |
+| **Club** | 30 % | 10 % | 1× | 0.85× | Hard | on |
+| **Pro** | none | none | 1× | 1× (raw) | Pro: places the ball away from your racket | off |
+
+Only Pro runs at real-world speed. The three easier levels slow the whole world down — ball, opponent and your own
+swing together — so a rally at Newbie takes twice the wall-clock time of the same rally at Pro. Nothing about the
+physics changes: the ball still leaves the racket at the same metres per second, it is the clock that is slower, the
+way a replay is. Because the swing is measured on the same clock, a slower world does not ask you to swipe faster.
+The **Game speed** slider in the settings panel overrides the level's speed from 0.30× to 1.00× if you want a
+different pace; moving it marks the level as *custom*.
 
 At every level your *hand* does the technique: given the swing you asked for, it searches the racket face (tilt and
 yaw) whose real drag-and-Magnus flight lands at the stroke's natural depth, and steps your feet in or back so the
@@ -46,6 +53,29 @@ Implementation notes, because they are the interesting part:
   that set is not convex, so a blend is usually illegal.
 
 The sliders in the settings panel let you mix your own level.
+
+## On a phone
+
+The phone build runs the same game with the same stroke grammar, played with **one thumb**. There is no on-screen
+stick or button bar: the finger replaces the mouse directly.
+
+| Gesture | What it does |
+|---|---|
+| **Drag** | Move the racket. It follows above your finger, so your thumb never covers the ball. |
+| **Swipe up** | Topspin family: drive, loop, smash, flick, lob (how hard you swipe is the power) |
+| **Swipe down** | Backspin family: short push, push, fast long push, chop |
+| **Swipe sideways** | Flat hit, and it aims the ball to that side |
+| **Hold still** | Block, or a short push — the safe shots |
+| **Tap** | Toss the serve |
+| **Two fingers up / down** | Step in or step back (the stance: close to the table unlocks flicks and blocks, far back unlocks chops and lobs) |
+
+Why the swipe direction carries the stroke family: on the desktop the held mouse button picks between topspin and
+backspin, which a phone does not have. A swipe direction is the one gesture every phone player already knows, it is
+what a real player does with their arm, and it needs no on-screen control to remember. Power is the swipe's speed,
+exactly as the mouse measures cursor speed, so the same stroke table and the same hand solver run on both platforms.
+
+The app asks for landscape (the table is wide), offers fullscreen with a landscape orientation lock where the
+browser allows it, and stays playable in portrait with a wider lens and the camera pulled back.
 
 ## Controls: the stroke grammar
 
@@ -79,6 +109,7 @@ half first, a serve that clips the net is a let, volleys lose the point.
   switch, table/net/floor collisions, swept racket collision, forward simulation.
 - `src/strokes.js` — the stroke grammar: grips, stroke recipes, gesture classifier, swing synthesizer with the hand's
   face-angle solver.
+- `src/touch.js` — touch input: one-finger racket control, swipe-direction families, tap to serve, two-finger stance.
 - `src/levels.js` — the four player levels (assist, racket drift, racket size, ball speed, opponent, coaching).
 - `src/ai.js` — opponent: playing styles, reaction delay, physics-based intercept prediction, ballistic return solver,
   serve solver, and the player's shot-assist solver.

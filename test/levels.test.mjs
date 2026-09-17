@@ -5,11 +5,28 @@ import { Match } from '../src/game.js';
 import { classify, synthesize } from '../src/strokes.js';
 import { simulateFlight, spinComponents, PARAMS, TABLE, v3, len, add, sub, scale } from '../src/physics.js';
 let fails = 0;
+
+// --- speed ladder: Pro is real-time by definition; every level below it is slower, and strictly ordered so the
+// ladder actually ramps. A newcomer needs time to see the ball, not just a bigger racket.
+{
+  const ts = LEVEL_ORDER.map(k => LEVELS[k].timeScale);
+  const proIsRealTime = LEVELS.pro.timeScale === 1;
+  const ordered = ts.every((v, i) => i === 0 || v > ts[i - 1]);
+  const belowOne = LEVEL_ORDER.filter(k => k !== 'pro').every(k => LEVELS[k].timeScale < 1);
+  for (const [name, ok, detail] of [
+    ['pro runs at exactly 1x (real table tennis)', proIsRealTime, `pro=${LEVELS.pro.timeScale}`],
+    ['every level below pro is slower than real time', belowOne, ts.join(', ')],
+    ['the speed ladder is strictly increasing', ordered, ts.join(' < ')],
+  ]) { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  (${detail})`); }
+  // How long the ball takes to cross the table at each speed, at a typical 6 m/s rally pace.
+  for (const k of LEVEL_ORDER) console.log(`      ${LEVELS[k].label.padEnd(7)} ${LEVELS[k].timeScale.toFixed(2)}x  ball crosses the table in ${(TABLE.length / 6 / LEVELS[k].timeScale * 1000).toFixed(0)} ms`);
+}
+
 for (const lvl of LEVEL_ORDER) {
   const L = LEVELS[lvl];
   let seed = 33; const rng = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
   const ev = []; const m = new Match({ level: L.ai, style: 'attacker', onEvent: (e) => ev.push(e), rng });
-  m.assist = L.assist; m.racketScale = L.racketScale;
+  m.assist = L.assist; m.racketScale = L.racketScale; m.timeScale = L.timeScale;
   const STRIKE = TABLE.length / 2 + 0.3, HOME = v3(0, TABLE.height + 0.25, STRIKE);
   let pos = { ...HOME }, prev = { ...pos }, t = 0, swing = 0, sv = null, sn = null, refine = null; const dt = 1 / 60;
   const parked = lvl === 'newbie' || lvl === 'casual';     // these levels must work with little or no player skill
